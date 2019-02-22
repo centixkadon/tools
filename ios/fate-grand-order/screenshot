@@ -1,0 +1,80 @@
+#!/usr/bin/python3
+
+import os
+import sys
+import time
+
+import logging
+import random
+
+import wda
+
+
+class FgoError(Exception):
+  def name(self):
+    return type(self).__name__
+
+class JsonError(FgoError):
+  pass
+
+
+class Point:
+  def __init__(self, x, y):
+    self.x = int(x)
+    self.y = int(y)
+
+
+def tap(e, s):
+  bounds = e.bounds
+  while True:
+    width = random.gauss(bounds.width * 0.5, bounds.width * 0.2)
+    height = random.gauss(bounds.height * 0.5, bounds.height * 0.2)
+    if 0.0 <= width <= bounds.width and 0.0 <= height <= bounds.height:
+      break
+
+  p = Point(bounds.x + width, bounds.y + height)
+  s.tap(p.x, p.y)
+  return p
+
+
+def readJson(filename):
+  if os.path.exists(filename):
+    with open(filename, "r", encoding="utf-8") as f:
+      try:
+        return json.load(f)
+      except json.decoder.JSONDecodeError as e:
+        raise JsonError(e)
+  return {}
+
+def writeJson(obj, filename):
+  with open(filename, "w", encoding="utf-8") as f:
+    json.dump(obj, f)
+
+
+def main(bundleIdsJsonFilename, url):
+  logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s - %(message)s")
+
+  bundleIds = readJson(bundleIdsJsonFilename)
+  bundleName = "fgocn"
+  c = wda.Client(url)
+  status = c.status()
+  if status["os"]["name"] == "iOS":
+    logging.info("connect {} ({} {})".format(status["ios"]["ip"], status["os"]["name"], status["os"]["version"]))
+  else:
+    raise FgoError("Device is not iOS")
+
+  with c.session(bundleIds[bundleName]) as s:
+    logging.info("start {} ({}), window_size: {}".format(s.capabilities["browserName"], s.bundle_id, s.window_size()))
+
+    frameStamp = time.time()
+    while True:
+      logging.info("time: {}".format(time.time() - frameStamp))
+      frameStamp = time.time()
+
+      frame = s.screenshot()
+      frame.save("screenshot.png")
+      # s.tap(1, 1)
+
+
+if __name__ == "__main__":
+  main(sys.argv[1], sys.argv[2])
