@@ -1,0 +1,98 @@
+#!/usr/bin/python3
+
+import time
+
+class TestException(Exception):
+  @property
+  def name(self):
+    return type(self).__name__
+
+
+class AException(TestException):
+  """"""
+
+class BException(TestException):
+  """"""
+
+
+def variable_print():
+  print("g: {}".format(g))
+  print("l: {}".format(l))
+
+
+def variable_func1():
+  g["a"] = "func1 a"
+  l = "func1 l"
+  variable_print()
+
+
+def variable_func2():
+  global l
+  g["b"] = "func2 b"
+  l = "func2 l"
+  variable_print()
+
+
+if __name__ == "__main__":
+  print("===== variable =====")
+  g = {
+    "a": "global a",
+    "b": "global b"
+  }
+  l = "global"
+  variable_print()
+  variable_func1()
+  variable_func2()
+
+  print("===== exception =====")
+  try:
+    raise AException("a")
+  except TestException as e:
+    print("{}: {}".format(e.name, e))
+  try:
+    try:
+      d = 1 / 0
+    except Exception as e:
+      raise BException(e)
+  except TestException as e:
+    print("{}: {}".format(e.name, e))
+
+  print("===== decorator @ =====")
+  class decorator_class:
+    def __init__(self, func):
+      self._func = func
+      self._time = 0.0
+
+    def __call__(self):
+      a = time.time()
+      self._func()
+      self._time = time.time() - a
+
+    @property
+    def time(self):
+      return self._time
+
+  @decorator_class
+  def decorator_sleep():
+    time.sleep(0.0)
+
+  decorator_sleep()
+  print("{} s".format(decorator_sleep.time))
+
+  print("===== decorator @ =====")
+  def decorator_a(f):
+    print("a before")
+    f()
+    print("a after")
+    return f
+
+  def decorator_b(f):
+    print("b before")
+    f()
+    print("b after")
+    return f
+
+  @decorator_a
+  @decorator_b
+  def decorator_f():
+    print("f")
