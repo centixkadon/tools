@@ -1,0 +1,175 @@
+#!/usr/bin/python3
+
+import getopt
+import getpass
+import gettext
+import sys
+import time
+import logging
+
+import requests
+import json
+
+def printHelp(showAll=False):
+  program = sys.argv[0]
+  file = sys.stderr
+  print("usage:", file=sys.stderr)
+  print("  {} COMMAND [OPTIONS]".format(program), file=sys.stderr)
+  print("command:", file=sys.stderr)
+  if showAll:
+    print("  {} help             print less help".format(program), file=sys.stderr)
+    print("  {} all              print all help".format(program), file=sys.stderr)
+  else:
+    print("  {} help             print this help".format(program), file=sys.stderr)
+  print("  {} info             print portal infomation".format(program), file=sys.stderr)
+  print("  {} logout           logout portal".format(program), file=sys.stderr)
+  print("  {} login  ...       login portal".format(program), file=sys.stderr)
+  print("  {} login  [USERNAME [PASSWORD]]".format(" " * len(program)), file=sys.stderr)
+  if showAll:
+    print("  {} loop   ...       loop login portal".format(program), file=sys.stderr)
+    print("  {} loop   [USERNAME [PASSWORD [DELAY_SECONDS [POST_INTERVAL_SECONDS]]]]".format(" " * len(program)), file=sys.stderr)
+  print("options:", file=sys.stderr)
+  print("  USERNAME                         portal account username. use '-' or ignore this option to input without echo.", file=sys.stderr)
+  print("  PASSWORD                         portal account password. use '-' or ignore this option to input without echo.", file=sys.stderr)
+  if showAll:
+    print("  DELAY_SECONDS                    delay between logins. default is 300.0", file=sys.stderr)
+    print("  POST_INTERVAL_SECONDS            interval between posts. default is 1.0", file=sys.stderr)
+
+class Args:
+  def __init__(self):
+    self.cmd = "help"
+    self.host = "http://p.nju.edu.cn"
+    self.portal = self.host + "/portal_io"
+    self.headers = {"Connection": "close"}
+    self.timeout = (3.1, 15.1)
+    self.username = "-"
+    self.password = "-"
+    self.delay = 300.0
+    self.post_interval = 1.0
+
+class ArgsError(Exception):
+  def name(self):
+    return type(self).__name__
+
+def post(url, data=None):
+  try:
+    with requests.Session() as s:
+      s.headers.update(args.headers)
+      r = s.post(url, data=data, timeout=args.timeout)
+      time.sleep(args.post_interval)
+  except requests.exceptions.Timeout:
+    logging.warning("Timeout")
+    r = None
+  if r is None or r.status_code != 200:
+    return {}
+  return r.json()
+
+
+def info(show=False):
+  userinfoJson = post(args.portal + "/getinfo")
+  ret = {"username": None}
+  if "userinfo" in userinfoJson and "username" in userinfoJson["userinfo"]:
+    userinfoJson = userinfoJson["userinfo"]
+    volumeJson = post(args.portal + "/selfservice/volume/getlist")
+    if "rows" in volumeJson and isinstance(volumeJson["rows"], list) and len(volumeJson["rows"]) > 0:
+      volumeJson = volumeJson["rows"][0]
+      ret = {
+        "username": userinfoJson["username"],
+        "fullname": userinfoJson["fullname"],
+        "client_ip": ".".join([str(userinfoJson["useripv4"] // (256**i) % 256) for i in range(3, -1, -1)]),
+        "balance": "RMB {}.{}".format(userinfoJson["balance"] // 100, userinfoJson["balance"] % 100),
+        "use_time": ":".join([str(volumeJson["total_ipv4_volume"] // (60**i) % (744 if i == 2 else 60)) for i in range(2, -1, -1)]) + " h"
+      }
+  if show:
+    logging.info("Info: {}".format(ret))
+  return ret
+
+
+def logout():
+  ret = post(args.portal + "/logout")
+  logging.info("Logout: {}".format(ret))
+  return ret
+
+
+def logout_with_check(username):
+  ret = info()
+  if ret["username"] != username:
+    if ret["username"] is not None:
+      logout()
+    return True
+  return False
+
+
+def login(username, password):
+  if not logout_with_check(username):
+    return None
+  ret = post(args.portal + "/login", data={"username": username, "password": password})
+  logging.info("Login: {}".format(ret))
+  return ret
+
+
+def main():
+  if args.cmd in ["login", "loop"]:
+    if args.username == "-":
+      args.username = getpass.getpass("username: ")
+    if args.password == "-":
+      args.password = getpass.getpass("password: ")
+
+  if args.cmd == "help":
+    printHelp()
+  elif args.cmd == "all":
+    printHelp(True)
+  elif args.cmd == "info":
+    logging.info("Parameters: {{ post_interval: {} }}".format(args.post_interval))
+    info(True)
+  elif args.cmd == "logout":
+    logging.info("Parameters: {{ post_interval: {} }}".format(args.post_interval))
+    logout()
+  elif args.cmd == "login":
+    logging.info("Parameters: {{ username: {}, password: {}, post_interval: {} }}".format(args.username, "***", args.post_interval))
+    login(args.username, args.password)
+  elif args.cmd == "loop":
+    logging.info("Parameters: {{ username: {}, password: {}, delay: {}, post_interval: {} }}".format(args.username, "***", args.delay, args.post_interval))
+    while True:
+      login(args.username, args.password)
+      time.sleep(args.delay)
+  else:
+    raise ArgsError("COMMAND is not supported")
+
+
+if __name__ == "__main__":
+  logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s - %(message)s")
+
+  args = Args()
+  argc = len(sys.argv)
+  if argc > 1:
+    args.cmd = sys.argv[1]
+
+    if argc > 2:
+      args.username = sys.argv[2]
+    if argc > 3:
+      args.password = sys.argv[3]
+
+    try:
+      if argc > 4:
+        try:
+          args.delay = float(sys.argv[4])
+        except ValueError:
+          raise ArgsError("DELAY_SECONDS is not a number")
+        if args.delay < 0:
+          raise ArgsError("DELAY_SECONDS is under zero")
+      if argc > 5:
+        try:
+          args.post_interval = float(sys.argv[5])
+        except ValueError:
+          raise ArgsError("POST_INTERVAL_SECONDS is not a number")
+        if args.post_interval < 0:
+          raise ArgsError("POST_INTERVAL_SECONDS is under zero")
+
+      main()
+    except ArgsError as e:
+      logging.error("{}: {}".format(e.name(), e))
+      printHelp()
+      exit(1)
+  else:
+    printHelp()
