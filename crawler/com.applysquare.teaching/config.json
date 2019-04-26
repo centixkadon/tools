@@ -1,0 +1,22 @@
+{
+  "location": {
+    "origin": "https://teaching.applysquare.com",
+    "login": "/Api/User/ajaxLogin",
+    "pathname": "/Api/{}/token/{}"
+  },
+  "params": {
+    "_sort_order": "publish_at",
+    "_sort": {
+      "ASC": "ascend",
+      "DESC": "descend"
+    },
+    "plan_id": "-1",
+    "is_answer": "2",
+    "cid": "1644",
+    "uid": "30"
+  },
+  "timeout": [
+    3.1,
+    9.1
+  ]
+}
