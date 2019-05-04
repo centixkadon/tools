@@ -3,17 +3,12 @@
 import os
 import sys
 
-import getpass
 import logging
 
-import hashlib
 import re
-import time
 
 import json
 import requests
-
-import pdb
 
 
 
@@ -165,6 +160,7 @@ class Engine:
     super().__init__(*args, **kwargs)
 
     self.s = requests.Session()
+    self.s.headers.update(Json("../headers.json")["headers"])
 
   def __enter__(self):
     self.s = type(self.s).__enter__(self.s)
@@ -267,12 +263,10 @@ class Google(Engine):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
 
-    self.i = (432466, 3603444696)
+    self.i = (432493, 1331979669)
 
   def __enter__(self):
     super().__enter__()
-
-    self.s.headers.update(headers)
 
     self.params = {
       "client": "webapp",
@@ -308,8 +302,6 @@ class Baidu(Engine):
 
   def __enter__(self):
     super().__enter__()
-
-    self.s.headers.update(headers)
 
     self.s.get("https://fanyi.baidu.com/")
     token = re.findall(r"token: '(.*?)'", self.s.get("https://fanyi.baidu.com/").text)[0]
@@ -356,7 +348,7 @@ def printHelp(engine=None):
   print("  FROM             The language translate from (default is {})".format(fromDefault))
   print("  TO               The language translate to (default is {})".format(toDefault))
   if engine is not None:
-    print("{}:".format(engine))
+    print("language of {}:".format(engine))
     if engine in engines:
       index = list(engines.keys()).index(engine)
       [print("  {:16} {}".format(codes[index], lang)) for lang, codes in langs.items() if codes[index]]
@@ -371,8 +363,6 @@ def main(query, engine, fromLang, toLang):
 
 if __name__ == "__main__":
   logging.basicConfig(level=logging.ERROR, format="%(asctime)s %(levelname)s - %(message)s")
-
-  headers = Json("../headers.json")["headers"]
 
   if len(sys.argv) > 1:
     query = sys.argv[1]
