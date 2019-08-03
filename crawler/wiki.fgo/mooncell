@@ -1,0 +1,559 @@
+#!/usr/bin/python3
+
+import os
+
+import logging
+
+import argparse
+import bs4
+import json
+import re
+
+import requests
+
+import pdb
+
+
+
+class color:
+  _colors = dict(zip(["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"], range(8)))
+  def __init__(self, bold=True, fg=None, bg=None):
+    self._bold, self._fg, self._bg = bold, fg, bg
+  def __getattr__(self, c):
+    if c.lower() == "default":
+      return __class__()
+    if c.lower() == "bold":
+      return __class__(not self._bold, self._fg, self._bg)
+    if c.lower() in self._colors:
+      return __class__(self._bold, **dict({"fg": self._fg, "bg": self._bg}, **{"fg" if c == c.lower() else "bg": self._colors[c.lower()]}))
+    if c.lower() == "light":
+      g = self._fg if c == c.lower() else self._bg
+      if g is not None and g < 16:
+        return __class__(self._bold, **dict({"fg": self._fg, "bg": self._bg}, **{"fg" if c == c.lower() else "bg": g + 8 if g < 8 else g - 8}))
+      raise KeyError("not system color can not be light")
+    if c.lower() == "gray":
+      def gray(i):
+        if 0 <= i < 26:
+          return __class__(self._bold, **dict({"fg": self._fg, "bg": self._bg}, **{"fg" if c == c.lower() else "bg": 16 if i == 0 else i + 231 if i < 25 else 231}))
+        raise KeyError("gray should be in [0, 26)")
+      return gray
+    if c.lower() == "rgb":
+      def rgb(r, g, b):
+        if 0 <= r < 6 and 0 <= g < 6 and 0 <= b < 6:
+          return __class__(self._bold, **dict({"fg": self._fg, "bg": self._bg}, **{"fg" if c == c.lower() else "bg": r * 36 + g * 6 + b + 16}))
+        raise KeyError("rgb should be in [0, 6)")
+      return rgb
+    raise KeyError("color is not correct")
+  __getitem__ = __getattr__
+  def __call__(self, s=""):
+    fg = "" if self._fg is None else f';{self._fg + 30}' if self._fg < 8 else f';{self._fg + 82}' if self._fg < 16 else f';38;5;{self._fg:>03}'
+    bg = "" if self._bg is None else f';{self._bg + 40}' if self._bg < 8 else f';{self._bg + 92}' if self._bg < 16 else f';48;5;{self._bg:>03}'
+    return "" if s == "" else f'\033[{"1" if self._bold else "0"}{fg}{bg}m{s}\033[0m'
+color = color()
+def initial():
+  os.environ.update(zip(("LINES", "COLUMNS"), os.popen('stty size', 'r').read().split()))
+  for no, c in [(logging.CRITICAL, color.magenta), (logging.ERROR, color.red), (logging.WARNING, color.yellow), (logging.INFO, color.green), (logging.DEBUG, color.white)]:
+    logging.addLevelName(no, c(logging.getLevelName(no)))
+
+
+
+class Json(dict):
+  def __init__(self, filename, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+
+    self.__filename = filename
+    if os.path.exists(self.__filename):
+      try:
+        with open(self.__filename, "r", encoding="utf-8") as f:
+          self.update(json.load(f))
+      except json.decoder.JSONDecodeError:
+        logging.warning(f'except json.decoder.JSONDecodeError while reading file "{self.__filename}", set json to {{}}')
+
+  def flush(self):
+    try:
+      with open(self.__filename, "w", encoding="utf-8") as f:
+        json.dump(self, f, ensure_ascii=False)
+    except KeyboardInterrupt:
+      os.remove(self.__filename)
+      raise KeyboardInterrupt
+
+
+
+class Command:
+  def __init__(self, *args, path, download, update, calculate, **kwargs):
+    self._path = path
+    if not os.path.exists(self._path):
+      os.makedirs(self._path, mode=0o755)
+
+    self._download = download
+    self._update = update
+    self._calculate = calculate
+
+    self._url = "https://fgo.wiki/api.php"
+    self._materialNames = [
+      "英雄之证", "凶骨", "龙之牙", "虚影之尘", "愚者之锁", "万死的毒针", "魔术髓液", "宵泣之铁桩", "振荡火药",
+      "世界树之种", "鬼魂提灯", "八连双晶", "蛇之宝玉", "凤凰羽毛", "无间齿轮", "禁断书页", "人工生命体幼体", "陨蹄铁", "大骑士勋章", "追忆的贝壳", "枯淡勾玉", "永远结冰", "巨人的指环", "极光之钢", "闲古铃",
+      "混沌之爪", "蛮神心脏", "龙之逆鳞", "精灵根", "战马的幼角", "血之泪石", "黑兽脂", "封魔之灯", "智慧之圣甲虫像", "起源的胎毛", "咒兽胆石", "奇奇神酒", "晓光炉心", "九十九镜",
+    ] + [f'{b}{a}' for a in [f'之{c}石' for c in "辉魔秘"] + [f'阶{c}' for c in ["银棋", "金像"]] for b in "剑弓枪骑术杀狂"] + ["传承结晶"]
+    self._classNames = dict(zip(["Saber", "Archer", "Lancer", "Rider", "Caster", "Assassin", "Berserker", "Shielder", "Ruler", "Avenger", "MoonCancer", "Alterego", "Foreigner", "BeastⅠ", "BeastⅡ", "BeastⅢ", "BeastI", "BeastII", "BeastIII"], ["剑", "弓", "枪", "骑", "术", "杀", "狂", "盾", "尺", "仇", "月", "丑", "外", "兽Ⅰ", "兽Ⅱ", "兽Ⅲ", "兽Ⅰ", "兽Ⅱ", "兽Ⅲ"]))
+
+  def _get(self, params):
+    r = requests.get(self._url, params=params)
+    r.raise_for_status()
+
+    return json.loads(r.text)
+
+  def _getTranscludedin(self, template):
+    filename = f'{self._path}/{template}.json'
+    d = Json(filename)
+    if self._download or self._update or "query" not in d:
+      d.update(self._get({"action": "query", "titles": f'模板:{template}', "prop": "transcludedin", "tilimit": 500, "format": "json"}))
+      logging.debug(f'transcludedin ({template}): {d}')
+      d.flush()
+    return d["query"]["pages"].popitem()[1]["transcludedin"]
+
+  def _getRevid(self, title):
+    return self._get({"action": "parse", "page": title, "prop": "revid", "format": "json"})["parse"]["revid"]
+
+  def _getParsetree(self, title):
+    filename = f'{self._path}/{title.split("/")[0]}.json'
+    d = Json(filename)
+    updated = False
+    if self._download or "parse" not in d or "revid" not in d["parse"] or (self._update and d["parse"]["revid"] < self._getRevid(title)):
+      d.update(self._get({"action": "parse", "page": title, "prop": "parsetree|revid", "format": "json"}))
+      logging.debug(f'parsetree ({title}): {d}')
+      updated = True
+      d.flush()
+    return d["parse"]["parsetree"]["*"], str(d["parse"]["pageid"]), updated
+
+  def _setParsetree(self, title, soup):
+    filename = f'{self._path}/{title}.json'
+    d = Json(filename)
+    d.update({"parse": {"parsetree": {"*": str(soup)}}})
+    d.flush()
+
+  @staticmethod
+  def _saveCsv(filename, keyName, names, dictItems):
+    def getNames(t):
+      if isinstance(t, tuple):
+        return t
+      return t, t
+
+    with open(filename, "w", encoding="utf-8-sig") as f:
+      f.write(keyName)
+      for t in names:
+        o, n = getNames(t)
+        f.write(f',"{n}"')
+      f.write('\n')
+      for k, v in dictItems:
+        f.write(k)
+        for t in names:
+          o, n = getNames(t)
+          f.write(f',"{v[o] if o in v else "0"}"')
+        f.write('\n')
+
+  @staticmethod
+  def _saveTxt(filename, names):
+    with open(filename, "w") as f:
+      for name in names:
+        f.write(f'{name}\n')
+
+  @classmethod
+  def methods(cls):
+    return [method for method in cls.__dict__.keys() if method[0] != "_"]
+
+
+
+class Enemy(Command):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._names = [
+      "剑", "弓", "枪", "骑", "术", "杀", "狂", "盾", "尺", "仇", "月", "丑", "外", "兽Ⅰ", "兽Ⅱ", "兽Ⅲ",
+      "天", "地", "人", "星", "兽",
+      "男性", "女性", "其他",
+      "龙", "骑乘", "神性", "猛兽", "魔性", "王", "天地从者", "天地从者(亚从者)", "天地从者(拟似从者)", "罗马", "亚瑟", "阿尔托莉雅脸", "所爱之人", "希腊神话男性", "人类威胁", "伊莉雅", "超巨大",
+      "天地拟似", "人型", "被EA特攻",
+    ]
+
+  def update(self):
+    parsetree, _, _ = self._getParsetree("敌人一览")
+    with open("./parsetree.xml", "w") as f:
+      f.write(parsetree)
+
+    soup = bs4.BeautifulSoup(parsetree, features="xml")
+    [comment.decompose() for comment in soup.select('comment')]
+    [comment.decompose() for comment in soup.select('template')]
+    soup = bs4.BeautifulSoup(str(soup), features="xml")
+
+    self._enemysDict = Json(f'{self._path}/enemys.json')
+    enemysTitles = []
+    for header in soup.select('h'):
+      table = header.next_sibling.string.strip().replace("\n|}", "")
+      trs = table.split("\n|-\n")[1:]
+
+      keys = [th.split("|")[-1] for th in trs[0].split("\n")]
+
+      for tr in trs[1:]:
+        tr = tr.replace("\n", "|")
+        tds = re.findall(r"(\[\[.*?\]\]|[^|]*)\|\|", tr.replace('\n', '') + "||")
+
+        enemy = dict(zip(keys, tds))
+        enemy["职阶"] = self._classNames[enemy["职阶"].split("link=")[1].split("]]")[0] or enemy["职阶"].split("[[文件:")[1].split(".png|")[0]]
+        enemy[enemy["职阶"]] = "1"
+        enemyTitles = enemy["名称"].split("<span id=")
+        enemyTitles = enemyTitles[0].split("<br>") + [enemyTitle.split("></span>")[0][1:-1] for enemyTitle in enemyTitles[1:]]
+        enemy["隐藏属性"] = enemy.pop("力")
+        enemy["特性"] = [] if enemy["特性"] == "—" else enemy["特性"].split("<br>")
+        for key in enemy["特性"]:
+          enemy[key] = "1"
+
+        logging.info(enemyTitles)
+        logging.debug(enemy)
+        for enemyTitle in enemyTitles:
+          if enemyTitle not in enemysTitles:
+            self._enemysDict.update({enemyTitle: enemy})
+            enemysTitles.append(enemyTitle)
+
+    # pdb.set_trace()
+    # print()
+
+  def save(self):
+    self.update()
+
+    self._saveCsv("./enemys.csv", "名称", self._names, self._enemysDict.items())
+
+
+
+class Servant(Command):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._names = [
+      ("urlbb", "@NGA"), ("title", "搬运自Mooncell"),
+      ("urltitlebb", "Mooncell链接"),
+      "序号", "稀有度", "中文名", "日文名", "英文名", "中文卡面名", "日文卡面名", "中文战斗名",
+      ("title", "名称"),
+      "职阶", "剑", "弓", "枪", "骑", "术", "杀", "狂", "盾", "尺", "仇", "月", "丑", "外", "兽Ⅰ", "兽Ⅱ", "兽Ⅲ",
+      "隐藏属性", "天", "地", "人", "星", "兽",
+      "性别", "男性", "女性", "其他",
+      "龙", "骑乘", "神性", "猛兽", "魔性", "王", "天地从者", "天地从者(亚从者)", "天地从者(拟似从者)", "罗马", "亚瑟", "阿尔托莉雅脸", "所爱之人", "希腊神话男性", "人类威胁", "伊莉雅", "超巨大",
+      "天地拟似", "人型", "被EA特攻",
+      "属性1", "秩序", "中立", "混沌",
+      "属性2", "善", "中庸", "恶", "狂", "新娘", "夏",
+      "筋力", "耐久", "敏捷", "魔力", "幸运", "宝具",
+      "基础ATK", "基础HP", "满级ATK", "满级HP",
+      ("第一张卡", "卡1"), ("第二张卡", "卡2"), ("第三张卡", "卡3"), ("第四张卡", "卡4"), ("第五张卡", "卡5"),
+      "出星率", "即死率", "暴击权重",
+      ("Q卡np率", "Q卡NP"), ("A卡np率", "A卡NP"), ("B卡np率", "B卡NP"), ("EX卡np率", "EX卡NP"), ("宝具np率", "宝具NP"), ("受击np率", "受击NP"),
+      ("Q卡hit数", "Q卡Hit"), ("A卡hit数", "A卡Hit"), ("B卡hit数", "B卡Hit"), ("EX卡hit数", "EX卡Hit"), ("宝具卡hit数", "宝具Hit"),
+      "Q卡伤害分布", "A卡伤害分布", "B卡伤害分布", "EX卡伤害分布", ("宝具卡伤害分布", "宝具伤害分布"),
+      "获取途径", "声优", "画师", "身高", "体重", "昵称",
+    ] + [f'{i}{j}{k}' for i, j in [("灵基", 4), ("技能", 9)] for j in ["总计"] + list(range(1, j + 1)) for k in self._materialNames]
+
+  def _updateBasic(self, soup, servant):
+    templates = soup.select('root>template:has(>title:contains("基础数值(无法召唤)"))')
+    assert len(templates) <= 1
+    notSummon = len(templates) > 0
+
+    templates = soup.select('root>template:has(>title:contains("基础数值"))')
+    assert len(templates) == 1 or len(templates[0].select('part:has(>name:contains("中文名")):has(>value:contains("亨利·杰基尔＆海德"))')) == 1
+    template = templates[0]
+
+    servant.update({part("name")[0].text.strip(): part.value.text.strip() for part in template("part", recursive=False) if part("name")[0].text.strip() not in ["立绘tabber"]})
+
+    if servant["序号"] == "0":
+      servant["获取途径"] = "敌方从者"
+
+    if notSummon:
+      assert "姓名" in servant
+      servant["中文名"] = servant.pop("姓名")
+
+      assert "获取途径" not in servant
+      servant["获取途径"] = "无法召唤"
+
+    if "声优新" in servant:
+      servant["声优"] = f'({servant["声优"]}),{servant["声优新"]}'
+    for i in range(3):
+      key = f'声优{i + 1}'
+      if key in servant:
+        servant["声优"] = f'{servant["声优"]},{servant[key]}'
+
+    for key, keys in [("隐藏属性", ["天", "地", "人", "星", "兽"]), ("性别", ["男性", "女性", "其他"])]:
+      if key in servant:
+        if not notSummon:
+          assert servant[key] in keys + ["？"]
+        if servant[key] in keys:
+          servant[servant[key]] = "1"
+
+    if servant["职阶"] in self._classNames:
+      servant["职阶"] = self._classNames[servant["职阶"]]
+      servant[servant["职阶"]] = "1"
+    elif servant["职阶"] in ["Grand Caster"]:
+      logging.debug(f'Strange value: servant["职阶"] = {servant["职阶"]}')
+    else:
+      logging.warning(f'Strange value: servant["职阶"] = {servant["职阶"]}')
+
+    if notSummon:
+      for i in range(2):
+        servant[f'属性{i + 1}'] = []
+      for value in servant["属性"].split("/"):
+        v, ext = re.findall(r"^(—|[^(]+)(\(.+\))?$", value)[0]
+        if v == "—":
+          for i in range(2):
+            servant[f'属性{i + 1}'].append(f'{v}{ext}')
+        else:
+          v = v.split("·")
+          for i in range(2):
+            servant[f'属性{i + 1}'].append(f'{v[i]}{ext}')
+      for i in range(2):
+        servant[f'属性{i + 1}'] = "/".join(servant[f'属性{i + 1}'])
+    else:
+      for i in range(2):
+        key = f'属性{i + 1}'
+        keys = ["秩序", "中立", "混沌", "善", "中庸", "恶", "狂", "夏", "新娘"]
+        if key in servant:
+          assert servant[key] in keys + ["？"]
+          if servant[key] in keys:
+            servant[servant[key]] = "1"
+
+    for i in range(2):
+      assert "特性" not in servant or servant["特性"] == ""
+      key = f'特性{i + 1}'
+      keys = ["龙", "骑乘", "神性", "猛兽", "魔性", "王", "天地从者", "罗马", "亚瑟", "阿尔托莉雅脸", "所爱之人", "希腊神话男性", "人类威胁", "伊莉雅", "超巨大"]
+      if key in servant and servant[key] != "":
+        value = servant[key]
+        assert value in keys
+        servant[value] = "1"
+
+        keyComment = f'特性{i + 1}备注'
+        if keyComment in servant and servant[keyComment][0] + servant[keyComment][-1] == "()":
+          value += servant[keyComment]
+          assert value in keys + ["天地从者(亚从者)", "天地从者(拟似从者)", "超巨大(龙体)", "魔性(魔性菩萨)", "超巨大(魔性菩萨)"]
+          servant[value] = "1"
+
+    for key in ["天地拟似"]:
+      servant[key] = "0" if key not in servant or servant[key] in ["0", "否"] else "1"
+    for key in ["人型", "被EA特攻"]:
+      servant[key] = "1" if key not in servant or servant[key] in ["1", "是"] else "0"
+
+
+  def _updateMaterial(self, soup, servant):
+    for title, prefix, l, r in [("灵基再临素材", "灵基", 0, 4), ("技能升级素材", "技能", 1, 10)]:
+      templates = soup.select(f'root>template:has(>title:contains("{title}"))')
+      assert len(templates) <= 1
+      if len(templates) == 1:
+        template = templates[0]
+
+        materials = {}
+        for part in template("part", recursive=False):
+          key = part("name", recursive=False)[0].text.strip()
+          if key not in ["稀有度"]:
+            materials[key] = []
+            for material in part.value.select('template:has(>title:contains("材料消耗"))'):
+              materials[key].append(tuple(value.text.strip() for value in material.select('part>value')))
+
+        for i in range(l, r):
+          for material, number in materials[f'{i}->{i + 1}']:
+            servant[f'{prefix}{i - l + 1}{material}'] = number
+        for material, number in materials["总计"]:
+          servant[f'{prefix}总计{material}'] = number
+
+    # pdb.set_trace()
+    # print()
+
+  def update(self):
+    self._servantNames = []
+    for t in ["基础数值", "基础数值(无法召唤)"]:
+      titles = [link["title"] for link in self._getTranscludedin(t)]
+      self._servantNames += [s for s in titles if max([s.find(t) for t in ["模板:", "用户:", "Mooncell:", "练习条目"]]) < 0]
+
+    self._servantsDict = Json(f'{self._path}/servants.json')
+
+    servantCount = 0
+    for servantName in self._servantNames:
+      parsetree, pageid, updated = self._getParsetree(servantName)
+
+      if servantCount == 0:
+        with open("./parsetree.xml", "w") as f:
+          f.write(parsetree)
+
+      if updated or self._calculate or pageid not in self._servantsDict:
+        logging.info(f'{servantCount + 1}/{len(self._servantNames)} {servantName}')
+
+        with open("./parsetree.xml", "w") as f:
+          f.write(parsetree)
+
+        soup = bs4.BeautifulSoup(parsetree, features="xml")
+        [comment.decompose() for comment in soup.select('comment')]
+
+        servant = {
+          "pageid": pageid,
+          "url": f'https://fgo.wiki/id/{pageid}',
+          "urlbb": f'[url=https://fgo.wiki/id/{pageid}]{pageid}[/url]',
+          "title": servantName,
+          "urltitle": f'https://fgo.wiki/w/{servantName}',
+          "urltitlebb": f'[url=https://fgo.wiki/w/{servantName}]{servantName}[/url]',
+        }
+        self._updateBasic(soup, servant)
+        self._updateMaterial(soup, servant)
+
+        # pdb.set_trace()
+        # print()
+
+        self._servantsDict.update({pageid: servant})
+        self._servantsDict.flush()
+
+      servantCount += 1
+
+
+  def save(self):
+    self.update()
+
+    self._saveCsv("./servants.csv", "pageid", self._names, sorted(self._servantsDict.items(), key=lambda t: int(t[1]["序号"])))
+    self._saveTxt("./materials.txt", self._materialNames)
+
+
+
+class Quest(Command):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+
+    self._names = [
+      "章节", "章节标题", "章节地点", ("一地点", "地点"), "标题", ("名称jp", "日文标题"),
+      ("一AP", "AP"), "推荐等级", "羁绊", "经验", "QP",
+    ] + [f'敌人{j + 1}{i}' for i in ["", "类型"] for j in range(9)]
+    self._questAttributeKeys = ["id", "开放条件", "图标", "标题背景颜色", "标题", "名称cn", "名称jp", "推荐等级", "羁绊", "经验", "QP", "可重复", "一AP", "一地点", "一1", "备注"]
+    self._questEnemyKeys = ["一1敌人1", "一1敌人2", "一1敌人3", "一2敌人1", "一2敌人2", "一2敌人3", "一3敌人1", "一3敌人2", "一3敌人3"]
+
+  def update(self):
+    parsetree, _, _ = self._getParsetree("关卡配置")
+    with open("./parsetree.xml", "w") as f:
+      f.write(parsetree)
+
+    soup = bs4.BeautifulSoup(parsetree, features="xml")
+
+    self._chapterNames = []
+    for level in soup.select('h[level="3"]'):
+      chapters = level.next_sibling.string.split("\n|-\n")
+      chaptersLines = [chapter.split("\n") for chapter in chapters]
+      self._chapterNames += [chapterLines[0].split("=")[-1].split("]]")[0] for chapterLines in chaptersLines if chapterLines[1].find("自由关卡") >= 0]
+
+    logging.debug(self._chapterNames)
+
+    self._questsDict = Json(f'{self._path}/quests.json')
+    if "chapterNames" not in self._questsDict:
+      self._questsDict["chapterNames"] = []
+
+    chapterNameSplitTemp = ()
+    for chapterName in self._chapterNames:
+      parsetree, _, updated = self._getParsetree(chapterName)
+      with open("./parsetree.xml", "w") as f:
+        f.write(parsetree)
+
+      chapterName = chapterName.split("/")[0]
+      if updated or self._calculate or chapterName not in self._questsDict["chapterNames"]:
+        chapterNameSplit = chapterName.split(" ")
+        chapterNameSplit = " ".join(chapterNameSplit[:-2]), chapterNameSplit[-2], chapterNameSplit[-1]
+
+        soup = bs4.BeautifulSoup(parsetree, features="xml")
+        for template in soup.select('template:has(>title:contains("关卡配置")):has(>part:has(>name:contains("图标")):has(>value:contains("自由关卡"))):has(>part>name:contains("可重复"))'):
+          quest = {}
+          for part in template("part", recursive=False):
+            key = part.select_one("name").text.strip()
+            if key in self._questAttributeKeys:
+              quest.update({key: part.value.text.strip()})
+
+            try:
+              enemyIndex = self._questEnemyKeys.index(key)
+            except ValueError:
+              enemyIndex = -1
+            if enemyIndex >= 0:
+              if part.template is None:
+                enemyTitle = "敌人3"
+                enemySplit = part.value.text.strip().split("[[")[1].split("]]")[0].split("|")[:2]
+                if len(enemySplit) == 1:
+                  enemySplit += enemySplit
+                enemyName, enemyShow = enemySplit
+
+                enemyTemplate = part.value.text.strip().split("<br>")
+                enemyTemplate[0] = enemyTemplate[0][2:-2].split("|")
+                if len(enemyTemplate[0]) == 1:
+                  enemyTemplate[0] += [""]
+                assert enemyTemplate[0][1] in ["", "影从者"]
+                enemyTemplate[0] = "|".join(enemyTemplate[0])
+
+                enemyTemplate[1] = re.findall(r'Lv\.(\d{1,2})\((.)\)HP (\d{1,3}(,\d{3})*)', enemyTemplate[1])
+                assert len(enemyTemplate[1]) == 1
+                enemyTemplate[1] = "{1}|{0}|{4}".format(*enemyTemplate[1][0], enemyTemplate[1][0][2].replace(",", ""))
+                logging.warning(f'Change to enemy template "{chapterName}": "{part.value.text.strip()}" -> {{{{{"|".join(["敌人3", enemyTemplate[0], enemyTemplate[1]])}}}}}')
+              else:
+                enemyTitle = part.template.title.text.strip()
+                if enemyTitle not in ["敌人1", "敌人2", "敌人3"] and chapterNameSplitTemp != chapterNameSplit:
+                  logging.warning(f'Deprecated enemy template "{chapterName}": {enemyTitle}')
+                  chapterNameSplitTemp = chapterNameSplit
+                enemyName = part.template("part")[0].value.text.strip()
+                enemyShow = enemyName if len(part.template("part")) < 2 or part.template("part")[1].value.text.strip() == "" else part.template("part")[1].value.text.strip()
+
+              enemyType = "敌人" if enemyTitle != "敌人3" else "影" if enemyShow[0] == "影" else "从者"
+              quest.update({f'敌人{enemyIndex + 1}': enemyName, f'敌人{enemyIndex + 1}类型': enemyType})
+
+          assert "id" not in quest
+          assert "备注" not in quest
+          if "名称cn" in quest:
+            quest.update({"标题": quest["名称cn"]})
+          quest.update({"章节": chapterNameSplit[0], "章节标题": chapterNameSplit[1], "章节地点": chapterNameSplit[2]})
+
+          logging.info(f'{(quest["章节"], quest["章节标题"], quest["章节地点"], quest["一地点"], quest["标题"])}')
+
+          self._questsDict.update({quest["标题"]: quest})
+
+        if chapterName not in self._questsDict["chapterNames"]:
+          self._questsDict["chapterNames"].append(chapterName)
+        self._questsDict.flush()
+
+    # pdb.set_trace()
+    # print()
+
+  def save(self):
+    self.update()
+
+    self._questsDict.pop("chapterNames")
+    self._saveCsv("./quests.csv", "标题", self._names, self._questsDict.items())
+
+
+
+def main():
+  parser = argparse.ArgumentParser(description="Mooncell Crawler")
+  parser.add_argument("-V", "--version", action="version", version="%(prog)s 0.1")
+  parser.add_argument("-v", "--verbose", help=f'set log level to {logging.getLevelName(30)}, {logging.getLevelName(20)} or {logging.getLevelName(10)} (default {logging.getLevelName(40)})', action="count", default=0)
+  parserInternet = parser.add_mutually_exclusive_group()
+  parserInternet.add_argument("-d", "--download", help="download cache from Internet disregard the cache", action="store_true")
+  parserInternet.add_argument("-u", "--update", help="update cache from Internet if updated", action="store_true")
+  parser.add_argument("-c", "--calculate", help="calculate data from cache disregard the data", action="store_true")
+
+  subparsers = parser.add_subparsers(title="commands", help="commands about mooncell crawler", metavar="COMMAND")
+  parserServant = subparsers.add_parser("servant", help="crawl servants data")
+  parserEnemy = subparsers.add_parser("enemy", help="crawl enemys data")
+  parserQuest = subparsers.add_parser("quest", help="crawl quests data")
+
+  parserServant.set_defaults(cls=Servant)
+  parserServant.add_argument("-p", "--path", help="servants files path", default="./servant")
+  parserServant.add_argument("cmd", help="command about crawling servants data {%(choices)s}", metavar="COMMAND", choices=Servant.methods())
+
+  parserEnemy.set_defaults(cls=Enemy)
+  parserEnemy.add_argument("-p", "--path", help="enemys files path", default="./enemy")
+  parserEnemy.add_argument("cmd", help="command about crawling enemys data {%(choices)s}", metavar="COMMAND", choices=Enemy.methods())
+
+  parserQuest.set_defaults(cls=Quest)
+  parserQuest.add_argument("-p", "--path", help="quests files path", default="./quest")
+  parserQuest.add_argument("cmd", help="command about crawling quests data {%(choices)s}", metavar="COMMAND", choices=Quest.methods())
+
+  args = parser.parse_args()
+
+  logging.basicConfig(level=max(0, 40 - args.verbose * 10), format="%(asctime)s.%(msecs)03d %(levelname)19s %(filename)s:%(lineno)3s - %(msg)s", datefmt="%Y-%m-%d %H:%M:%S")
+  logging.info(f'Arguments: {args}')
+
+  args.cls(**args.__dict__).__getattribute__(args.cmd)()
+
+if __name__ == "__main__":
+  initial()
+  main()
