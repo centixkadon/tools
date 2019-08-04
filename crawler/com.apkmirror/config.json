@@ -2,10 +2,6 @@
   "location": {
     "apkmirror": "https://www.apkmirror.com"
   },
-  "proxies": {
-    "http": "http://cxd-lab:1080/",
-    "https": "http://cxd-lab:1080/"
-  },
   "target": [
     9,
     0

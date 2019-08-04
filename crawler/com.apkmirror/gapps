@@ -12,7 +12,6 @@ import brotli
 import bs4
 import hashlib
 import json
-import re
 
 import requests
 
@@ -20,6 +19,8 @@ import requests
 
 class color:
   _colors = dict(zip(["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"], range(8)))
+  if platform.system() == "Windows":
+    os.system("color")
   def __init__(self, bold=True, fg=None, bg=None):
     self._bold, self._fg, self._bg = bold, fg, bg
   def __getattr__(self, c):
@@ -48,14 +49,10 @@ class color:
       return rgb
     raise KeyError("color is not correct")
   __getitem__ = __getattr__
-  if platform.system() == "Linux":
-    def __call__(self, s):
-      fg = "" if self._fg is None else f";{self._fg + 30}" if self._fg < 8 else f";{self._fg + 82}" if self._fg < 16 else f";38;5;{self._fg:>03}"
-      bg = "" if self._bg is None else f";{self._bg + 40}" if self._bg < 8 else f";{self._bg + 92}" if self._bg < 16 else f";48;5;{self._bg:>03}"
-      return "" if s == "" else f"\033[{'1' if self._bold else '0'}{fg}{bg}m{s}\033[0m"
-  else:
-    def __call__(self, s):
-      return s
+  def __call__(self, s):
+    fg = "" if self._fg is None else f";{self._fg + 30}" if self._fg < 8 else f";{self._fg + 82}" if self._fg < 16 else f";38;5;{self._fg:>03}"
+    bg = "" if self._bg is None else f";{self._bg + 40}" if self._bg < 8 else f";{self._bg + 92}" if self._bg < 16 else f";48;5;{self._bg:>03}"
+    return "" if s == "" else f"\033[{'1' if self._bold else '0'}{fg}{bg}m{s}\033[0m"
 color = color()
 
 
@@ -96,8 +93,8 @@ def getText(s, params):
 
 
 def updatePackage(s, origin, keyword, package, mirror):
-  text = getText(s, dict(url=os.path.join(origin, ""), params=dict(post_type="app_release", searchtype="app", s=keyword)))
-  soup = bs4.BeautifulSoup(text, features="html5lib")
+  text = getText(s, dict(url=f"{origin}/", params=dict(post_type="app_release", searchtype="app", s=keyword)))
+  soup = bs4.BeautifulSoup(text, features="lxml")
 
   packages = {}
   for packageInfo in soup(class_="infoSlide"):
@@ -152,7 +149,7 @@ def download(s, params, sha1digest, path):
     sha1.update(r.content)
     if sha1digest.lower() == sha1.hexdigest():
       filename = os.path.split(r.url.split("?", 1)[0])[1]
-      filename = os.path.join(path, filename)
+      filename = f"{path}/{filename}"
       with open(filename, "wb") as f:
         f.write(r.content)
       logging.info(f"saveto: {filename}")
@@ -162,7 +159,7 @@ def download(s, params, sha1digest, path):
   pause()
 
 
-def gapps(config, headers, mirror, developers, tags, path, *args, noconnect, nodownload, force, nodelete, **kargs):
+def gapps(config, headers, mirror, developers, tags, path, proxy, *args, noconnect, nodownload, force, nodelete, **kargs):
   config = Json(config)
   headers = Json(headers)
 
@@ -200,7 +197,11 @@ def gapps(config, headers, mirror, developers, tags, path, *args, noconnect, nod
 
   with requests.Session() as s:
     s.headers.update(headers["headers"])
-    s.proxies.update(config["proxies"])
+    if proxy is not None:
+      s.proxies.update({
+        "http": proxy,
+        "https": proxy,
+      })
 
     if not os.path.exists(path):
       os.makedirs(path, mode=0o755)
@@ -229,7 +230,7 @@ def gapps(config, headers, mirror, developers, tags, path, *args, noconnect, nod
           if dirpath == path:
             for filename in filenames:
               if filename.startswith(f"{key}_"):
-                filename = os.path.join(dirpath, filename)
+                filename = f"{dirpath}/{filename}"
                 modificationTime = os.path.getmtime(filename)
                 if modificationTime > packageModificationTime:
                   if packageFilename is not None and not nodelete:
@@ -240,13 +241,13 @@ def gapps(config, headers, mirror, developers, tags, path, *args, noconnect, nod
                   os.remove(filename)
             break
 
-        packagePathname = os.path.join("/apk", developer[mirror], package[mirror], "")
+        packagePathname = f"/apk/{developer[mirror]}/{package[mirror]}/"
         logging.info(f"package: {packagePathname}")
 
         text = getText(s, dict(url=f"{origin}{packagePathname}"))
-        with open(os.path.join(path, "package.html"), "w") as f:
+        with open(f"{path}/package.html", "w", encoding="utf-8") as f:
           f.write(text)
-        soup = bs4.BeautifulSoup(text, features="html5lib")
+        soup = bs4.BeautifulSoup(text, features="lxml")
 
         downloadNothing = True
         for version in soup.select(f'a.fontBlack[href^="{packagePathname}"][href$="-release/"]'):
@@ -254,9 +255,9 @@ def gapps(config, headers, mirror, developers, tags, path, *args, noconnect, nod
           logging.info(f"version: {versionPathname}")
 
           text = getText(s, dict(url=f"{origin}{versionPathname}"))
-          with open(os.path.join(path, "version.html"), "w") as f:
+          with open(f"{path}/version.html", "w", encoding="utf-8") as f:
             f.write(text)
-          soup = bs4.BeautifulSoup(text, features="html5lib")
+          soup = bs4.BeautifulSoup(text, features="lxml")
 
           variants = []
           # variantPrefix = "-".join(filter(None, re.split(r"\W+", package["name"]))).lower()
@@ -341,16 +342,16 @@ def gapps(config, headers, mirror, developers, tags, path, *args, noconnect, nod
           logging.info(f"variant: {variantPathname}")
 
           text = getText(s, dict(url=f"{origin}{variantPathname}"))
-          with open(os.path.join(path, "variant.html"), "w") as f:
+          with open(f"{path}/variant.html", "w", encoding="utf-8") as f:
             f.write(text)
-          soup = bs4.BeautifulSoup(text, features="html5lib")
+          soup = bs4.BeautifulSoup(text, features="lxml")
 
           link = soup.select_one('article')["id"].split("-")[1]
           filesize = soup.select_one('svg.apkm-icon-filesize').parent.find_next_sibling().text.split("(")[0].strip()
           sha1digest = soup.select('span.wordbreak-all')[3].string
           logging.info(f"download: {link} (size: {filesize}, sha1digest: {sha1digest})")
 
-          filename = download(s, dict(url=os.path.join(origin, "wp-content/themes/APKMirror/download.php"), params={"id": link}), sha1digest, path)
+          filename = download(s, dict(url=f"{origin}/wp-content/themes/APKMirror/download.php", params={"id": link}), sha1digest, path)
           if packageFilename is not None and not nodelete:
             if filename != packageFilename:
               os.remove(packageFilename)
@@ -384,6 +385,7 @@ def main():
   parser.add_argument("--developer", help="developer", action="append", dest="developers")
   parser.add_argument("--tag", help="tag", action="append", dest="tags")
   parser.add_argument("--path", help="apk path", default="./apk")
+  parser.add_argument("--proxy", help="proxy like http://localhost:1080/")
 
   # noconnet, nodownload, force, nodelete
   parser.add_argument("--noconnect", help="not connect to the Internet, print arguments only", action="store_const", default=False, const=True)
