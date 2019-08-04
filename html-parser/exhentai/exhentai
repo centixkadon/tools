@@ -20,7 +20,7 @@ def printHelp(program, file=sys.stderr):
   print('    | {                                                  |', file=file)
   print('    |   "url": "https://exhentai.org/",                  |', file=file)
   print('    |   "headers": {                                     |', file=file)
-  print('    |     "Every-Key": "you can find in your browser" |', file=file)
+  print('    |     "Every-Key": "you can find in your browser"    |', file=file)
   print('    |   },                                               |', file=file)
   print('    |   "cookies": {                                     |', file=file)
   print('    |     "igneous": "xxx",                              |', file=file)
@@ -570,7 +570,7 @@ if __name__ == "__main__":
       logging.debug("args: {} {} {} {} {}".format(jsonFilename, gallerysPath, commandLines, gallerysJsonFilename, searchsJsonFilename))
       main(jsonFilename, gallerysPath, commandLines, gallerysJsonFilename, searchsJsonFilename)
     except CrawlerError as e:
-      logging.error("{}: {}".format(e.name(), e)
+      logging.error("{}: {}".format(e.name(), e))
       import traceback
       traceback.print_exc()
       exit(2)

@@ -1,0 +1,353 @@
+#!/usr/bin/python3
+
+import os
+import sys
+
+import getpass
+import logging
+
+import hashlib
+import re
+import time
+
+import json
+import requests
+
+
+
+def printHelp():
+  print("usage:")
+  print("  {} CONFIG COMMAND [LOG_LEVEL]".format(sys.argv[0]))
+  print("  {} CONFIG COMMAND ARGS [LOG_LEVEL]".format(sys.argv[0]))
+  print("options:")
+  print("  CONFIG           Config json filename")
+  print("  COMMAND          Crawler command")
+  print("  LOG_LEVEL        Log level (FATAL, ERROR, WARNING, INFO, DEBUG, NOTSET)")
+  print("commands:")
+  for command, (func, argv, message) in commands.items():
+    print("  {:<64} {}".format("{} CONFIG {} {}".format(sys.argv[0], command, " ".join(argv)), message.format(command, argv)))
+
+
+
+class CrawlerError(Exception):
+  def name(self):
+    return type(self).__name__
+
+class CommandError(CrawlerError):
+  pass
+
+class JsonError(CrawlerError):
+  pass
+
+class LoginError(CrawlerError):
+  pass
+
+class DownloadError(CrawlerError):
+  pass
+
+class ParserError(CrawlerError):
+  pass
+
+
+
+def resumeInterrupt(Error, error, message):
+  logging.error("{}: {}".format(error, message))
+  try:
+    input("Press Enter to continue or Ctrl+C to Exit...")
+  except KeyboardInterrupt:
+    raise Error(error)
+
+
+
+class Json(dict):
+  def __init__(self, filename, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+
+    self.__filename = filename
+    if os.path.exists(self.__filename):
+      with open(self.__filename, "r", encoding="utf-8") as f:
+        try:
+          self.update(json.load(f))
+        except json.decoder.JSONDecodeError as e:
+          raise JsonError(e)
+
+  def flush(self):
+    with open(self.__filename, "w", encoding="utf-8") as f:
+      json.dump(self, f, ensure_ascii=False)
+
+
+class Config(Json):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+
+    self._cache = Json("./cache.json")
+
+  def _url(self, path):
+    return self["location"]["origin"] + self["location"]["pathname"].format(path, self._cache["token"])
+
+  def _json(self, request):
+    try:
+      return json.loads(request.text)
+    except requests.exceptions.HTTPError as e:
+      raise DownloadError("{{ url: {}, e: {} }}", path, e)
+    except json.decoder.JSONDecodeError as e:
+      raise JsonError("{{ url: {}, e: {} }}", path, e)
+
+  def get(self, path, params=None):
+    if params is not None:
+      for k in params:
+        if params[k] is None:
+          params[k] = self["params"][k]
+    return self._json(requests.get(self._url(path), params=params))
+
+  def post(self, path, data=None, json=None):
+    if data is not None:
+      for k in data:
+        if data[k] is None:
+          data[k] = self["data"][k]
+    if json is not None:
+      for k in json:
+        if json[k] is None:
+          json[k] = self["json"][k]
+    return self._json(requests.post(self._url(path), data=data, json=json))
+
+  def login(self):
+    if "token" not in self._cache or self.get("User/saveLastLogin")["status"] == 100001:
+      try:
+        loginInfo = json.loads(requests.post(self["location"]["origin"] + self["location"]["login"], data=self._cache["account"]).text)
+        logging.info("loginInfo: {}".format(loginInfo))
+
+        if loginInfo["status"] != 70000:
+          raise LoginError("{}".format(loginInfo["message"]))
+        self["params"]["uid"] = self["data"]["uid"] = loginInfo["message"]["uid"]
+        self._cache["token"] = loginInfo["message"]["token"]
+      except json.decoder.JSONDecodeError as e:
+        raise JsonError("{{ url: {}, e: {} }}".format(self["location"]["login"], e))
+      except KeyError:
+        raise JsonError("Failed to get login.message from {}".format(loginInfo))
+      logging.debug("Update token")
+      self._cache.flush()
+
+  def updateAccount(self):
+    if "account" not in self._cache:
+      self._cache["account"] = {}
+    if "email" not in self._cache["account"]:
+      self._cache["account"]["email"] = input("Input email    (Press Ctrl+C to cancel): ")
+      logging.debug("Update email")
+      self._cache.flush()
+      print()
+    if "password" not in self._cache["account"]:
+      self._cache["account"]["password"] = hashlib.md5(getpass.getpass("Input password (Press Ctrl+C to cancel): ").encode()).hexdigest()
+      logging.debug("Update password")
+      self._cache.flush()
+      print()
+
+    self.login()
+
+
+def downloadFile(url, filename):
+  if os.path.exists(filename):
+    return
+  try:
+    url = url.split("?", 1)[0]
+    r = requests.get(url, timeout=tuple(config["timeout"]))
+    r.raise_for_status()
+    with open(filename, "wb") as f:
+      f.write(r.content)
+  except requests.exceptions.HTTPError as e:
+    print("download ('{}') HTTPError: {}".format(url, r.status_code))
+    with open("{}.{}".format(filename, "xml"), "wb") as f:
+      f.write(r.content)
+
+
+def fetchHomeworks():
+  def fetchHomeworksPage(page):
+    publishList = config.get("Work/getPublishList", params={"p": page + 1, "sort_order": "publish_at", "sort": "ASC", "plan_id": None, "uid": None, "cid": None})
+    logging.info("publishList: {}".format(publishList))
+    try:
+      return [[row[k] for k in ["homework_id", "plan_title"]] for row in publishList["message"]["rows"]], publishList["message"]["totalPages"]
+    except KeyError:
+      raise JsonError("Failed to get publishList")
+
+  homeworks, totalPages = fetchHomeworksPage(0)
+  for page in range(1, totalPages):
+    homeworks.extend(fetchHomeworksPage(page)[0])
+
+  return homeworks
+
+
+def fetchSubmitStudents():
+  def fetchSubmitStudentsPage(page):
+    submitList = config.get("Work/getWorkSubmitList", params={"p": page + 1, "homework_id": None, "is_answer": None, "uid": None, "cid": None})
+    logging.info("submitList: {}".format(submitList))
+    try:
+      return [[row[k] for k in ["uid", "student_id", "realname"]] for row in submitList["message"]["teacher_not_review"]]
+    except KeyError:
+      raise JsonError("Failed to get submitList")
+
+  submitStudents = fetchSubmitStudentsPage(0)
+
+  return submitStudents
+
+
+def fetchStudents(page):
+  def fetchStudentsPage(page):
+    studentsList = config.post("Group/getDisplayCon", data={"hidPage": page + 1, "condition": "", "uid": None, "cid": None})
+    logging.info("studentsList: {}".format(studentsList))
+    try:
+      return [[row[k] for k in ["uid", "student_id", "realname"]] for row in studentsList["message"]["content"]], studentsList["message"]["totalPages"], studentsList["message"]["stuNo"]
+    except KeyError:
+      raise JsonError("Failed to get studentsList")
+
+  students, totalPages, studentsCount = fetchStudentsPage(page)
+  for student in students:
+    yield student, studentsCount, page
+  for page in range(page + 1, totalPages):
+    for student in fetchStudentsPage(page)[0]:
+      yield student, studentsCount, page
+
+
+def fetchStudentAnswer(student):
+  studentAnswer = config.get("Work/getInfo", params={"homework_id": None, "be_uid": student[0], "uid": None, "cid": None})
+  logging.info("studentAnswer: {}".format(studentAnswer))
+  try:
+    studentAnswer = studentAnswer["message"]["question_list"][0]["answer_record"]
+    ret = {"select": studentAnswer["select"], "record": studentAnswer}
+    if "attach_info" in studentAnswer:
+      ret["attachs"] = [[attach["path"], attach["ext"].lower()] for attach in studentAnswer["attach_info"]]
+    return ret
+  except KeyError:
+    raise JsonError("Failed to get studentAnswer")
+
+
+def downloadStudentAnswers(command, args):
+  homeworks = fetchHomeworks()
+  print("HOMEWORK_INDEX: HOMEWORK_ID HOMEWORK_TITLE")
+  for i in range(len(homeworks)):
+    print("{}: {} {}".format(i, homeworks[i][0], homeworks[i][1]))
+  print()
+
+  while True:
+    try:
+      homeworkIndex = int(input("Input homework index (Press Ctrl+C to cancel): "))
+      if 0 <= homeworkIndex < len(homeworks):
+        break
+      else:
+        raise ValueError
+    except ValueError:
+      print("Please input homework index between 0 and {}".format(len(homeworks)))
+  homework = homeworks[homeworkIndex]
+
+  config["params"]["homework_id"] = homework[0]
+  homeworkPath = "./{}/{}/".format(command, homework[1])
+  if not os.path.exists(homeworkPath):
+    os.makedirs(homeworkPath, mode=0o755)
+
+  cache = Json(homeworkPath + "cache.json")
+  if "submitStudents" not in cache:
+    cache["submitStudents"] = fetchSubmitStudents()
+    cache.flush()
+
+  if "studentAnswers" not in cache:
+    cache["studentAnswers"] = {}
+
+  for student in cache["submitStudents"]:
+    if student[0] not in cache["studentAnswers"]:
+      cache["studentAnswers"][student[0]] = [student, fetchStudentAnswer(student)]
+      print("{}/{} {} {}".format(len(cache["studentAnswers"]), len(cache["submitStudents"]), student[1], student[2]))
+      cache.flush()
+
+  studentAnswersIndex = 0
+  for student, answer in cache["studentAnswers"].values():
+    studentAnswersIndex += 1
+    print("{}/{} {} {} ".format(studentAnswersIndex, len(cache["studentAnswers"]), student[1], student[2]), end="")
+    if answer["select"] != "":
+      print("text: '{}' ".format(answer["select"].replace("\n", r"\n")), end="")
+    print()
+
+    attachsCount = 0
+    if "attachs" in answer:
+      for attach in answer["attachs"]:
+        downloadFile(attach[0], "{}{}.{}.{}.{}".format(homeworkPath, student[1], student[2], attachsCount, attach[1]))
+        attachsCount += 1
+
+    for matchedAttach in re.findall(r"(https?:/(/[\w\-]+(\.[\w\-]+)*)+/?(\?[\w\-\.,@?^=%&:\/~\+#]*)?)", answer["select"]):
+      attach = matchedAttach[0], matchedAttach[0].split("?", 1)[0].split(".")[-1].lower()
+      downloadFile(attach[0], "{}{}.{}.{}.{}".format(homeworkPath, student[1], student[2], attachsCount, attach[1]))
+      attachsCount += 1
+      print("download ({})".format(matchedAttach[0]))
+
+    if attachsCount == 0:
+      resumeInterrupt(ParserError, "Nothing download", "https://teaching.applysquare.com/T/Course/index/cid/{}#T-Work-treviewinfo-id-{}-be_uid-{}".format(config["params"]["cid"], config["params"]["homework_id"], student[0]))
+
+
+def downloadStudents(command, args):
+  studentPath = "./{}/".format(command)
+
+  if not os.path.exists(studentPath):
+    os.makedirs(studentPath, mode=0o755)
+
+  cache = Json(studentPath + "cache.json")
+  if "students" not in cache:
+    cache["students"] = {}
+    cache["studentsPage"] = 0
+
+  for student, studentsCount, currentPage in fetchStudents(cache["studentsPage"]):
+    if student[0] not in cache["students"]:
+      print("{}/{} {}".format(len(cache["students"]), studentsCount, student))
+      cache["students"][student[0]] = student
+      cache["studentsPage"] = currentPage
+      cache.flush()
+
+  studentFilename = studentPath + "student.csv"
+  with open(studentFilename, "w", encoding="utf-8-sig") as f:
+    f.write("uid,student_id,realname\n")
+    for student in cache["students"].values():
+      f.write("{},{},{}\n".format(student[1], student[2], student[0]))
+
+
+
+def main(command, args):
+  logging.info("{} {}".format(command, args))
+
+  config.updateAccount()
+
+  commands[command][0](command, args)
+
+
+
+if __name__ == "__main__":
+  commands = {
+    "answers": (downloadStudentAnswers, [], "download student answers to ./{0}/HOMEWORK_TITLE"),
+    "students": (downloadStudents, [], "download students to ./{0}"),
+  }
+
+  try:
+    if len(sys.argv) <= 2:
+      raise CommandError("No command")
+    command = sys.argv[2]
+
+    if command not in commands:
+      raise CommandError("No such command")
+    func, argv, message = commands[command]
+
+    if len(sys.argv) <= len(argv) + 2:
+      raise CommandError("Not enough args")
+
+    loggingLevel = logging.ERROR
+    if len(sys.argv) > len(argv) + 3:
+      loggingLevel = sys.argv[len(argv) + 3]
+    logging.basicConfig(level=loggingLevel, format="%(asctime)s %(levelname)s - %(message)s")
+
+    config = Config(sys.argv[1])
+    main(command, dict(zip(argv, sys.argv[2:len(argv) + 2])))
+  except CommandError as e:
+    logging.basicConfig(format="%(asctime)s %(levelname)s - %(message)s")
+    logging.error("{}: {}".format(e.name(), e))
+    import traceback
+    traceback.print_exc()
+    printHelp()
+  except CrawlerError as e:
+    logging.error("{}: {}".format(e.name(), e))
+    import traceback
+    traceback.print_exc()

@@ -1,0 +1,405 @@
+#!/usr/bin/env python3
+
+import calendar
+import os
+import platform
+import time
+
+import logging
+
+import argparse
+import brotli
+import bs4
+import hashlib
+import json
+import re
+
+import requests
+
+
+
+class color:
+  _colors = dict(zip(["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"], range(8)))
+  def __init__(self, bold=True, fg=None, bg=None):
+    self._bold, self._fg, self._bg = bold, fg, bg
+  def __getattr__(self, c):
+    if c.lower() == "default":
+      return __class__()
+    if c.lower() == "bold":
+      return __class__(not self._bold, self._fg, self._bg)
+    if c.lower() in self._colors:
+      return __class__(self._bold, **dict({"fg": self._fg, "bg": self._bg}, **{"fg" if c == c.lower() else "bg": self._colors[c.lower()]}))
+    if c.lower() == "light":
+      g = self._fg if c == c.lower() else self._bg
+      if g is not None and g < 16:
+        return __class__(self._bold, **dict({"fg": self._fg, "bg": self._bg}, **{"fg" if c == c.lower() else "bg": g + 8 if g < 8 else g - 8}))
+      raise KeyError("not system color can not be light")
+    if c.lower() == "gray":
+      def gray(i):
+        if 0 <= i < 26:
+          return __class__(self._bold, **dict({"fg": self._fg, "bg": self._bg}, **{"fg" if c == c.lower() else "bg": 16 if i == 0 else i + 231 if i < 25 else 231}))
+        raise KeyError("gray should be in [0, 26)")
+      return gray
+    if c.lower() == "rgb":
+      def rgb(r, g, b):
+        if 0 <= r < 6 and 0 <= g < 6 and 0 <= b < 6:
+          return __class__(self._bold, **dict({"fg": self._fg, "bg": self._bg}, **{"fg" if c == c.lower() else "bg": r * 36 + g * 6 + b + 16}))
+        raise KeyError("rgb should be in [0, 6)")
+      return rgb
+    raise KeyError("color is not correct")
+  __getitem__ = __getattr__
+  if platform.system() == "Linux":
+    def __call__(self, s):
+      fg = "" if self._fg is None else f";{self._fg + 30}" if self._fg < 8 else f";{self._fg + 82}" if self._fg < 16 else f";38;5;{self._fg:>03}"
+      bg = "" if self._bg is None else f";{self._bg + 40}" if self._bg < 8 else f";{self._bg + 92}" if self._bg < 16 else f";48;5;{self._bg:>03}"
+      return "" if s == "" else f"\033[{'1' if self._bold else '0'}{fg}{bg}m{s}\033[0m"
+  else:
+    def __call__(self, s):
+      return s
+color = color()
+
+
+
+class Json(dict):
+  def __init__(self, filename, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+
+    self.__filename = filename
+    if os.path.exists(self.__filename):
+      try:
+        with open(self.__filename, "r", encoding="utf-8") as f:
+          self.update(json.load(f))
+      except json.decoder.JSONDecodeError:
+        logging.warning(f"except json.decoder.JSONDecodeError while reading file '{self.__filename}', not update json")
+
+  def flush(self):
+    try:
+      with open(self.__filename, "w", encoding="utf-8") as f:
+        json.dump(self, f, ensure_ascii=False)
+    except KeyboardInterrupt:
+      os.remove(self.__filename)
+      raise KeyboardInterrupt
+
+
+def pause():
+  import pdb; pdb.set_trace()
+
+
+def getText(s, params):
+  r = s.get(**params)
+  r.raise_for_status()
+
+  if r.headers.get("Content-Encoding") == "br":
+    return brotli.decompress(r.content).decode("utf-8")
+  else:
+    return r.text
+
+
+def updatePackage(s, origin, keyword, package, mirror):
+  text = getText(s, dict(url=os.path.join(origin, ""), params=dict(post_type="app_release", searchtype="app", s=keyword)))
+  soup = bs4.BeautifulSoup(text, features="html5lib")
+
+  packages = {}
+  for packageInfo in soup(class_="infoSlide"):
+    packageHead = packageInfo.find_previous_sibling("div").h5
+    packageName = packageHead["title"]
+    if max([packageName.find(x) for x in ["(Wear OS)", "(Android TV)", "(Daydream)", "(Cardboard)"]]) > 0:
+      continue
+    packageLink = packageHead.a["href"].split("/")[-2]
+    packages[packageLink] = {
+      "package": {
+        "name": packageName,
+        mirror: packageLink,
+      },
+      "info": "version:{0}, size:{2}, uploaded: {1}".format(*(value.text.strip() for value in packageInfo("span", class_="infoslide-value")))
+    }
+
+  if len(packages) == 0:
+    logging.error(f"No package {package} found")
+    return
+
+  if len(packages) == 1:
+    package.update(packages.popitem()[1]["package"])
+    return
+
+  print("           link - name - info")
+  for p in packages.values():
+    print(f"           {color.white(p['package'][mirror])} - {color.cyan(p['package']['name'])} - {p['info']}")
+
+  linkDefault = min(packages.keys(), key=lambda x: len(x))
+  while True:
+    link = input(f"           select a link for package (default {color.white(linkDefault)}): ") or linkDefault
+    if link in packages:
+      package.update(packages[link]['package'])
+      logging.info(f"update {package}")
+      break
+
+
+def updateKey(d, key):
+  while True:
+    value = input(f"           should {key} be download [yN]:").lower() or "n"
+    if len(value) == 1 and value in "yn":
+      d[key] = [True, False]["yn".index(value)]
+      break
+
+
+def download(s, params, sha1digest, path):
+  for _ in range(3):
+    r = s.get(**params)
+    r.raise_for_status()
+
+    sha1 = hashlib.sha1()
+    sha1.update(r.content)
+    if sha1digest.lower() == sha1.hexdigest():
+      filename = os.path.split(r.url.split("?", 1)[0])[1]
+      filename = os.path.join(path, filename)
+      with open(filename, "wb") as f:
+        f.write(r.content)
+      logging.info(f"saveto: {filename}")
+      return filename
+
+  logging.warning(f"digest error: {sha1.hexdigest()}")
+  pause()
+
+
+def gapps(config, headers, mirror, developers, tags, path, *args, noconnect, nodownload, force, nodelete, **kargs):
+  config = Json(config)
+  headers = Json(headers)
+
+  if developers is None:
+    developers = {"all"}
+  else:
+    developers = set(developers)
+  while True:
+    developersUnpack = {developer for key in developers for developer in [config["developers"][key]] for developer in (developer["include"] if "include" in developer else [key])}
+    if developersUnpack == developers:
+      break
+    developers = developersUnpack
+  logging.info(f"developers: {developers}")
+
+  if tags is None:
+    tags = {"default"}
+  else:
+    tags = set(tags)
+  while True:
+    tagsUnpack = {tag for key in tags for tag in [config["tags"][key]] for tag in (tag["include"] if "include" in tag else [key])}
+    if tagsUnpack == tags:
+      break
+    tags = tagsUnpack
+  logging.info(f"tags: {tags}")
+
+  packages = {}
+  for tag in tags:
+    for package, value in config["tags"][tag]["packages"].items():
+      packages[package] = packages.get(package, True) and value
+  logging.debug(f"packages: {packages}")
+
+  if noconnect:
+    return
+
+
+  with requests.Session() as s:
+    s.headers.update(headers["headers"])
+    s.proxies.update(config["proxies"])
+
+    if not os.path.exists(path):
+      os.makedirs(path, mode=0o755)
+
+    origin = config["location"][mirror]
+    for key, developer in config["developers"].items():
+      if key not in developers:
+        continue
+
+      for key, package in developer["packages"].items():
+        if not packages.get(key, False):
+          continue
+
+        if "name" not in package or mirror not in package:
+          logging.warning(f"package ({color.blue(key)}) should be update")
+          updatePackage(s, origin, f"{key} {developer['name']}", package, mirror)
+          config.flush()
+
+        logging.info(f"{color.green(developer['name'])} - {color.cyan(package['name'])}")
+        if nodownload:
+          continue
+
+        packageFilename = None
+        packageModificationTime = 0
+        for dirpath, _, filenames in os.walk(path):
+          if dirpath == path:
+            for filename in filenames:
+              if filename.startswith(f"{key}_"):
+                filename = os.path.join(dirpath, filename)
+                modificationTime = os.path.getmtime(filename)
+                if modificationTime > packageModificationTime:
+                  if packageFilename is not None and not nodelete:
+                    os.remove(packageFilename)
+                  packageFilename = filename
+                  packageModificationTime = modificationTime
+                else:
+                  os.remove(filename)
+            break
+
+        packagePathname = os.path.join("/apk", developer[mirror], package[mirror], "")
+        logging.info(f"package: {packagePathname}")
+
+        text = getText(s, dict(url=f"{origin}{packagePathname}"))
+        with open(os.path.join(path, "package.html"), "w") as f:
+          f.write(text)
+        soup = bs4.BeautifulSoup(text, features="html5lib")
+
+        downloadNothing = True
+        for version in soup.select(f'a.fontBlack[href^="{packagePathname}"][href$="-release/"]'):
+          versionPathname = version["href"]
+          logging.info(f"version: {versionPathname}")
+
+          text = getText(s, dict(url=f"{origin}{versionPathname}"))
+          with open(os.path.join(path, "version.html"), "w") as f:
+            f.write(text)
+          soup = bs4.BeautifulSoup(text, features="html5lib")
+
+          variants = []
+          # variantPrefix = "-".join(filter(None, re.split(r"\W+", package["name"]))).lower()
+          for variant in soup.select(f'a[href^="{versionPathname}"][href$="-download/"]'):
+            if variant.find_next_sibling("span", class_="colorLightBlack") is None:
+              import pdb; pdb.set_trace()
+              print()
+            if variant.find_next_sibling("span", class_="colorLightBlack").span is None:
+              import pdb; pdb.set_trace()
+              print()
+
+            variantTime = variant.find_next_sibling("span", class_="colorLightBlack").span["data-utcdate"]
+            variantArch, variantVer, variantDpi = (cell.string for cell in variant.find_parent(class_="table-row")(class_ = "table-cell")[1:])
+
+            variantVer = "Android 10.0+" if variantVer == "Android Q+" else variantVer
+            variantVer = "Android 10.1+" if variantVer == "Android Q Beta+" else variantVer
+            variantVer = "Android 10.0" if variantVer == "Android Q" else variantVer
+            variantVer = "Android 10.1" if variantVer == "Android Q Beta" else variantVer
+            variantVersion = [int(x) for x in variantVer.split(" ")[1].split("+")[0].split(".")]
+
+            targetVersion = config["target"]
+            targetVer = f"Android {'.'.join([str(x) for x in targetVersion])}"
+            if variantVersion > targetVersion:
+              logging.debug(f"{variantVer} not match {targetVer}")
+              continue
+            if variantVer[-1] != "+" and variantVersion != targetVersion:
+              logging.warning(f"{variantVer} not match {targetVer}")
+              continue
+
+            if variantArch not in config["architectures"]:
+              logging.warning(f"no architecture {variantArch}")
+              updateKey(config["architectures"], variantArch)
+              config.flush()
+            if variantDpi not in config["dpis"]:
+              logging.warning(f"no dpi {variantDpi}")
+              updateKey(config["dpis"], variantDpi)
+              config.flush()
+
+            if not config["architectures"].get(variantArch, False):
+              logging.debug(f"{variantArch} not match")
+              continue
+            if not config["dpis"].get(variantDpi, False):
+              logging.debug(f"{variantDpi} not match")
+              continue
+
+            variants.append({
+              "pathname": variant["href"],
+              "priority": (-list(config["dpis"].keys()).index(variantDpi), -list(config["architectures"].keys()).index(variantArch), variantVersion),
+              "time": calendar.timegm(time.strptime(variantTime, "%m/%d/%Y %H:%M UTC")),
+            })
+
+          if len(variants) == 0:
+            logging.warning(f"no veriant in this version match")
+            continue
+          if len(variants) > 1:
+            variants = sorted(variants, key=lambda x: x["priority"], reverse=True)
+          logging.debug(f"variants: {variants}")
+          if len(variants) > 1 and variants[0]["priority"] == variants[1]["priority"]:
+            logging.warning(f"same variants")
+            for variant in variants:
+              print(f"           link: {variant['pathname'].split('/')[-2]}, priority: {variant['priority']}, uploaded: {time.strftime('%Y-%m-%d %H:%M', time.gmtime(variant['time']))}")
+
+            while True:
+              index = input(f"           select the index of variant (1 to {len(variants)}, default 1): ") or "1"
+              try:
+                index = int(index) - 1
+              except ValueError:
+                continue
+              if not 0 <= index < len(variants):
+                continue
+              variant = variants[index]
+              break
+          else:
+            variant = variants[0]
+
+          if not force and variant["time"] < packageModificationTime:
+            logging.info(f"package: {package['name']} up to date")
+            downloadNothing = False
+            break
+
+          variantPathname = variant["pathname"]
+          logging.info(f"variant: {variantPathname}")
+
+          text = getText(s, dict(url=f"{origin}{variantPathname}"))
+          with open(os.path.join(path, "variant.html"), "w") as f:
+            f.write(text)
+          soup = bs4.BeautifulSoup(text, features="html5lib")
+
+          link = soup.select_one('article')["id"].split("-")[1]
+          filesize = soup.select_one('svg.apkm-icon-filesize').parent.find_next_sibling().text.split("(")[0].strip()
+          sha1digest = soup.select('span.wordbreak-all')[3].string
+          logging.info(f"download: {link} (size: {filesize}, sha1digest: {sha1digest})")
+
+          filename = download(s, dict(url=os.path.join(origin, "wp-content/themes/APKMirror/download.php"), params={"id": link}), sha1digest, path)
+          if packageFilename is not None and not nodelete:
+            if filename != packageFilename:
+              os.remove(packageFilename)
+          downloadNothing = False
+          break
+          # import pdb; pdb.set_trace()
+          # print()
+
+        if downloadNothing:
+          logging.warning("download nothing for all versions")
+          import pdb; pdb.set_trace()
+          print()
+
+
+
+
+def main():
+  if platform.system() == "Linux":
+    os.environ.update(zip(("LINES", "COLUMNS"), os.popen('stty size', 'r').read().split()))
+  for no, c in [(logging.CRITICAL, color.magenta), (logging.ERROR, color.red), (logging.WARNING, color.yellow), (logging.INFO, color.green), (logging.DEBUG, color.white)]:
+    logging.addLevelName(no, c(logging.getLevelName(no)))
+
+  parser = argparse.ArgumentParser(description=color.white("Google Apps Downloader"))
+  parser.add_argument("-V", "--version", action="version", version="%(prog)s 0.1")
+  parser.add_argument("-q", "--quiet", help=f"set log level up to {logging.getLevelName(50)} (default {logging.getLevelName(40)})", action="count", default=0)
+  parser.add_argument("-v", "--verbose", help=f"set log level down to {logging.getLevelName(30)}, {logging.getLevelName(20)} or {logging.getLevelName(10)} (default {logging.getLevelName(40)})", action="count", default=0)
+
+  parser.add_argument("--config", help="config filename", metavar="FILENAME", default="config.json")
+  parser.add_argument("--headers", help="headers filename", metavar="FILENAME", default="../headers.json")
+  parser.add_argument("--mirror", help="mirror site", default="apkmirror")
+  parser.add_argument("--developer", help="developer", action="append", dest="developers")
+  parser.add_argument("--tag", help="tag", action="append", dest="tags")
+  parser.add_argument("--path", help="apk path", default="./apk")
+
+  # noconnet, nodownload, force, nodelete
+  parser.add_argument("--noconnect", help="not connect to the Internet, print arguments only", action="store_const", default=False, const=True)
+  parser.add_argument("--nodownload", help="not download apk files, update package info only", action="store_const", default=False, const=True)
+  parser.add_argument("--force", help="force to update apk files", action="store_const", default=False, const=True)
+  parser.add_argument("--nodelete", help="not delete any old apk files", action="store_const", default=False, const=True)
+
+  args = parser.parse_args()
+
+  level = min(max(0, logging.ERROR + (args.quiet - args.verbose) * 10), logging.CRITICAL)
+  logging.basicConfig(level=level, format="%(asctime)s.%(msecs)03d %(levelname)19s %(filename)s:%(lineno)3s - %(msg)s", datefmt="%Y-%m-%d %H:%M:%S")
+  logging.info(f"Logging level is set to {logging.getLevelName(level)}")
+  logging.info(f"Arguments: {args}")
+
+  gapps(**args.__dict__)
+
+
+if __name__ == "__main__":
+  main()
