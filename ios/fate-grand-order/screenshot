@@ -4,9 +4,11 @@ import os
 import sys
 import time
 
+import json
 import logging
 import random
 
+from PIL import Image
 import wda
 
 
@@ -51,7 +53,7 @@ def writeJson(obj, filename):
     json.dump(obj, f)
 
 
-def main(bundleIdsJsonFilename, url):
+def main(bundleIdsJsonFilename, url, screenshotPath):
   logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s - %(message)s")
 
   bundleIds = readJson(bundleIdsJsonFilename)
@@ -71,10 +73,15 @@ def main(bundleIdsJsonFilename, url):
       logging.info("time: {}".format(time.time() - frameStamp))
       frameStamp = time.time()
 
+      screenshotTitle = input("screenshot: ")
+      screenshotFilename = screenshotPath + "/" + screenshotTitle + ".png"
       frame = s.screenshot()
-      frame.save("screenshot.png")
-      # s.tap(1, 1)
+
+      if s.orientation == wda.LANDSCAPE:
+        frame = frame.transpose(Image.ROTATE_90)
+      frame.save(screenshotFilename)
 
 
 if __name__ == "__main__":
-  main(sys.argv[1], sys.argv[2])
+  if len(sys.argv) > 3:
+    main(sys.argv[1], sys.argv[2], sys.argv[3])
