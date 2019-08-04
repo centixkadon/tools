@@ -159,7 +159,7 @@ def download(s, params, sha1digest, path):
   pause()
 
 
-def gapps(config, headers, mirror, developers, tags, path, proxy, *args, noconnect, nodownload, force, nodelete, **kargs):
+def gapps(config, headers, mirror, developers, tags, path, proxy, *args, noconnect, nodownload, force, nodelete, **kwargs):
   config = Json(config)
   headers = Json(headers)
 
