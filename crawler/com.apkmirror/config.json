@@ -1,0 +1,463 @@
+{
+  "location": {
+    "apkmirror": "https://www.apkmirror.com"
+  },
+  "proxies": {
+    "http": "http://cxd-lab:1080/",
+    "https": "http://cxd-lab:1080/"
+  },
+  "target": [
+    9,
+    0
+  ],
+  "architectures": {
+    "arm64-v8a": true,
+    "universal": true,
+    "arm64-v8a + armeabi-v7a": true,
+    "armeabi-v7a": true,
+    "noarch": true,
+    "x86_64": false,
+    "x86": false,
+    "x86 + x86_64": false
+  },
+  "dpis": {
+    "480dpi": true,
+    "400-640dpi": true,
+    "400-480dpi": true,
+    "nodpi": true,
+    "640dpi": false,
+    "560-640dpi": false,
+    "320dpi": false,
+    "240dpi": false,
+    "213-240dpi": false,
+    "160dpi": false,
+    "120-160dpi": false
+  },
+  "developers": {
+    "google": {
+      "name": "Google LLC",
+      "apkmirror": "google-inc",
+      "packages": {
+        "com.android.chrome": {
+          "name": "Google Chrome: Fast & Secure",
+          "apkmirror": "chrome"
+        },
+        "com.android.facelock": {
+          "name": "Trusted Face",
+          "apkmirror": "trusted-face"
+        },
+        "com.android.vending": {
+          "name": "Google Play Store",
+          "apkmirror": "google-play-store"
+        },
+        "com.google.android.apps.books": {
+          "name": "Google Play Books - Ebooks, Audiobooks, and Comics",
+          "apkmirror": "google-play-books"
+        },
+        "com.google.android.apps.cloudprint": {
+          "name": "Cloud Print",
+          "apkmirror": "cloud-print"
+        },
+        "com.google.android.apps.docs": {
+          "name": "Google Drive",
+          "apkmirror": "drive"
+        },
+        "com.google.android.apps.docs.editors.docs": {
+          "name": "Google Docs",
+          "apkmirror": "docs"
+        },
+        "com.google.android.apps.docs.editors.sheets": {
+          "name": "Google Sheets",
+          "apkmirror": "sheets"
+        },
+        "com.google.android.apps.docs.editors.slides": {
+          "name": "Google Slides",
+          "apkmirror": "slides"
+        },
+        "com.google.android.apps.enterprise.dmagent": {
+          "name": "Google Apps Device Policy",
+          "apkmirror": "device-policy"
+        },
+        "com.google.android.apps.fitness": {
+          "name": "Google Fit: Health and Activity Tracking",
+          "apkmirror": "fit"
+        },
+        "com.google.android.apps.gcs": {
+          "name": "Google Connectivity Services",
+          "apkmirror": "google-connectivity-services"
+        },
+        "com.google.android.apps.inputmethod.hindi": {
+          "name": "Google Indic Keyboard",
+          "apkmirror": "google-indic-keyboard"
+        },
+        "com.google.android.apps.inputmethod.zhuyin": {
+          "name": "Google Zhuyin Input",
+          "apkmirror": "google-zhuyin-input"
+        },
+        "com.google.android.apps.magazines": {
+          "name": "Google News: Top World & Local News Headlines",
+          "apkmirror": "google-news"
+        },
+        "com.google.android.apps.maps": {
+          "name": "Google Maps - Navigate & Explore",
+          "apkmirror": "maps"
+        },
+        "com.google.android.apps.messaging": {
+          "name": "Messages",
+          "apkmirror": "messenger-google-inc"
+        },
+        "com.google.android.apps.multidevice.client": {
+          "name": "Better Together",
+          "apkmirror": "better-together"
+        },
+        "com.google.android.apps.nexuslauncher": {
+          "name": "Pixel Launcher",
+          "apkmirror": "pixel-launcher"
+        },
+        "com.google.android.apps.photos": {
+          "name": "Google Photos",
+          "apkmirror": "photos"
+        },
+        "com.google.android.apps.plus": {
+          "name": "Google+ for G Suite",
+          "apkmirror": "google-for-g-suite"
+        },
+        "com.google.android.apps.tachyon": {
+          "name": "Google Duo - High Quality Video Calls",
+          "apkmirror": "duo-by-google"
+        },
+        "com.google.android.apps.translate": {
+          "name": "Google Translate",
+          "apkmirror": "translate"
+        },
+        "com.google.android.apps.turbo": {
+          "name": "Device Health Services",
+          "apkmirror": "device-health-services"
+        },
+        "com.google.android.apps.tycho": {
+          "name": "Google Fi",
+          "apkmirror": "project-fi"
+        },
+        "com.google.android.apps.walletnfcrel": {
+          "name": "Google Pay",
+          "apkmirror": "google-pay"
+        },
+        "com.google.android.apps.wallpaper": {
+          "name": "Google Wallpapers",
+          "apkmirror": "google-wallpaper-picker"
+        },
+        "com.google.android.apps.wellbeing": {
+          "name": "Digital Wellbeing",
+          "apkmirror": "digital-wellbeing"
+        },
+        "com.google.android.as": {
+          "name": "Google Device Personalization Services",
+          "apkmirror": "google-device-personalization-services"
+        },
+        "com.google.android.calculator": {
+          "name": "Google Calculator",
+          "apkmirror": "google-calculator"
+        },
+        "com.google.android.calendar": {
+          "name": "Google Calendar",
+          "apkmirror": "calendar"
+        },
+        "com.google.android.contacts": {
+          "name": "Google Contacts",
+          "apkmirror": "google-contacts"
+        },
+        "com.google.android.deskclock": {
+          "name": "Google Clock",
+          "apkmirror": "clock"
+        },
+        "com.google.android.dialer": {
+          "name": "Google Phone",
+          "apkmirror": "google-phone"
+        },
+        "com.google.android.gm": {
+          "name": "Gmail",
+          "apkmirror": "gmail"
+        },
+        "com.google.android.gm.exchange": {
+          "name": "Exchange Services",
+          "apkmirror": "exchange-services"
+        },
+        "com.google.android.gms": {
+          "name": "Google Play services",
+          "apkmirror": "google-play-services"
+        },
+        "com.google.android.GoogleCamera": {
+          "name": "Google Camera",
+          "apkmirror": "camera"
+        },
+        "com.google.android.googlequicksearchbox": {
+          "name": "Google App",
+          "apkmirror": "google-search"
+        },
+        "com.google.android.gsf": {
+          "name": "Google Services Framework",
+          "apkmirror": "google-services-framework"
+        },
+        "com.google.android.gsf.login": {
+          "name": "Google Account Manager",
+          "apkmirror": "google-account-manager"
+        },
+        "com.google.android.ims": {
+          "name": "Carrier Services",
+          "apkmirror": "carrier-services-2"
+        },
+        "com.google.android.inputmethod.japanese": {
+          "name": "Google Japanese Input",
+          "apkmirror": "google-japanese-input"
+        },
+        "com.google.android.inputmethod.korean": {
+          "name": "Google Korean Input",
+          "apkmirror": "google-korean-input"
+        },
+        "com.google.android.inputmethod.latin": {
+          "name": "Gboard - the Google Keyboard",
+          "apkmirror": "gboard"
+        },
+        "com.google.android.inputmethod.pinyin": {
+          "name": "Google Pinyin Input",
+          "apkmirror": "google-pinyin-input"
+        },
+        "com.google.android.keep": {
+          "name": "Google Keep - Notes and Lists",
+          "apkmirror": "keep"
+        },
+        "com.google.android.markup": {
+          "name": "Markup",
+          "apkmirror": "markup"
+        },
+        "com.google.android.marvin.talkback": {
+          "name": "Android Accessibility Suite",
+          "apkmirror": "android-accessibility-suite"
+        },
+        "com.google.android.music": {
+          "name": "Google Play Music",
+          "apkmirror": "google-play-music"
+        },
+        "com.google.android.packageinstaller": {
+          "name": "Package installer",
+          "apkmirror": "package-installer"
+        },
+        "com.google.android.play.games": {
+          "name": "Google Play Games",
+          "apkmirror": "google-play-games"
+        },
+        "com.google.android.printservice.recommendation": {
+          "name": "Print Service Recommendation Service",
+          "apkmirror": "print-service-recommendation-service-2"
+        },
+        "com.google.android.projection.gearhead": {
+          "name": "Android Auto - Google Maps, Media & Messaging",
+          "apkmirror": "android-auto"
+        },
+        "com.google.android.soundpicker": {
+          "name": "Google Sounds",
+          "apkmirror": "sounds"
+        },
+        "com.google.android.storagemanager": {
+          "name": "Smart Storage",
+          "apkmirror": "storage-manager"
+        },
+        "com.google.android.street": {
+          "name": "Google Street View",
+          "apkmirror": "street-view"
+        },
+        "com.google.android.tag": {
+          "name": "Tags",
+          "apkmirror": "tags-google"
+        },
+        "com.google.android.talk": {
+          "name": "Hangouts",
+          "apkmirror": "hangouts"
+        },
+        "com.google.android.tts": {
+          "name": "Google Text-to-speech",
+          "apkmirror": "google-text-to-speech-engine"
+        },
+        "com.google.android.videos": {
+          "name": "Google Play Movies & TV",
+          "apkmirror": "google-play-movies"
+        },
+        "com.google.android.webview": {
+          "name": "Android System WebView",
+          "apkmirror": "android-system-webview"
+        },
+        "com.google.android.youtube": {
+          "name": "YouTube",
+          "apkmirror": "youtube"
+        },
+        "com.google.earth": {
+          "name": "Google Earth",
+          "apkmirror": "earth"
+        },
+        "com.google.vr.vrcore": {
+          "name": "Google VR Services",
+          "apkmirror": "google-vr-services"
+        }
+      }
+    },
+    "all": {
+      "include": [
+        "google"
+      ]
+    }
+  },
+  "tags": {
+    "core": {
+      "packages": {
+        "com.android.vending": true,
+        "com.google.android.gms": true,
+        "com.google.android.gsf": true,
+        "com.google.android.gsf.login": true
+      }
+    },
+    "pico": {
+      "packages": {
+        "com.google.android.packageinstaller": true,
+        "com.google.android.soundpicker": true,
+        "com.google.android.tts": true
+      }
+    },
+    "nano": {
+      "packages": {
+        "com.android.facelock": true,
+        "com.google.android.apps.turbo": true,
+        "com.google.android.apps.wellbeing": true,
+        "com.google.android.googlequicksearchbox": true,
+        "com.google.android.markup": true
+      }
+    },
+    "micro": {
+      "packages": {
+        "com.google.android.apps.nexuslauncher": true,
+        "com.google.android.apps.wallpaper": true,
+        "com.google.android.calendar": true,
+        "com.google.android.gm": true,
+        "com.google.android.gm.exchange": true
+      }
+    },
+    "mini": {
+      "packages": {
+        "com.google.android.apps.maps": true,
+        "com.google.android.apps.messaging": true,
+        "com.google.android.apps.photos": true,
+        "com.google.android.calculator": true,
+        "com.google.android.deskclock": true,
+        "com.google.android.ims": true,
+        "com.google.android.tag": true,
+        "com.google.android.youtube": true
+      }
+    },
+    "full": {
+      "packages": {
+        "com.android.chrome": true,
+        "com.google.android.apps.books": true,
+        "com.google.android.apps.cloudprint": true,
+        "com.google.android.apps.docs": true,
+        "com.google.android.apps.magazines": true,
+        "com.google.android.keep": true,
+        "com.google.android.marvin.talkback": true,
+        "com.google.android.music": true,
+        "com.google.android.play.games": true,
+        "com.google.android.videos": true
+      }
+    },
+    "stock": {
+      "packages": {
+        "com.google.android.apps.tachyon": true,
+        "com.google.android.apps.translate": true,
+        "com.google.android.apps.walletnfcrel": true,
+        "com.google.android.contacts": true,
+        "com.google.android.dialer": true,
+        "com.google.android.GoogleCamera": true,
+        "com.google.android.inputmethod.latin": true,
+        "com.google.android.printservice.recommendation": true,
+        "com.google.android.projection.gearhead": true,
+        "com.google.android.storagemanager": true,
+        "com.google.android.webview": true,
+        "com.google.vr.vrcore": true
+      }
+    },
+    "super": {
+      "packages": {
+        "com.google.android.apps.docs.editors.docs": true,
+        "com.google.android.apps.docs.editors.sheets": true,
+        "com.google.android.apps.docs.editors.slides": true,
+        "com.google.android.apps.enterprise.dmagent": true,
+        "com.google.android.apps.fitness": true,
+        "com.google.android.apps.gcs": true,
+        "com.google.android.apps.inputmethod.hindi": true,
+        "com.google.android.apps.inputmethod.zhuyin": true,
+        "com.google.android.apps.multidevice.client": true,
+        "com.google.android.apps.plus": true,
+        "com.google.android.apps.tycho": true,
+        "com.google.android.as": true,
+        "com.google.android.inputmethod.japanese": true,
+        "com.google.android.inputmethod.korean": true,
+        "com.google.android.inputmethod.pinyin": true,
+        "com.google.android.street": true,
+        "com.google.android.talk": true,
+        "com.google.earth": true
+      }
+    },
+    "pico+": {
+      "include": [
+        "core",
+        "pico"
+      ]
+    },
+    "nano+": {
+      "include": [
+        "pico+",
+        "nano"
+      ]
+    },
+    "micro+": {
+      "include": [
+        "nano+",
+        "micro"
+      ]
+    },
+    "mini+": {
+      "include": [
+        "micro+",
+        "mini"
+      ]
+    },
+    "full+": {
+      "include": [
+        "mini+",
+        "full"
+      ]
+    },
+    "stock+": {
+      "include": [
+        "full+",
+        "stock"
+      ]
+    },
+    "super+": {
+      "include": [
+        "stock+",
+        "super"
+      ]
+    },
+    "manual": {
+      "packages": {
+        "com.google.android.inputmethod.japanese": false,
+        "com.google.android.inputmethod.korean": false,
+        "com.google.android.inputmethod.pinyin": false
+      }
+    },
+    "default": {
+      "include": [
+        "super+",
+        "manual"
+      ]
+    }
+  }
+}
