@@ -56,6 +56,23 @@ class color:
 color = color()
 
 
+def catch(func, *args, info=None, warning=None):
+  exception = None
+  while True:
+    try:
+      if exception is not None:
+        if info:
+          logging.info(info)
+        if warning:
+          logging.warning(warning)
+      func()
+    except args as e:
+      exception = e
+    else:
+      break
+  if exception is not None:
+    raise exception
+
 
 class Json(dict):
   def __init__(self, filename, *args, **kwargs):
@@ -70,12 +87,10 @@ class Json(dict):
         logging.warning(f"except json.decoder.JSONDecodeError while reading file '{self.__filename}', not update json")
 
   def flush(self):
-    try:
-      with open(self.__filename, "w", encoding="utf-8") as f:
+    with open(self.__filename, "w", encoding="utf-8") as f:
+      def func():
         json.dump(self, f, ensure_ascii=False)
-    except KeyboardInterrupt:
-      os.remove(self.__filename)
-      raise KeyboardInterrupt
+      catch(func, KeyboardInterrupt, warning="writing file {self.__filename}, do not interrupt")
 
 
 def pause():
@@ -151,8 +166,9 @@ def download(s, params, sha1digest, path):
       filename = os.path.split(r.url.split("?", 1)[0])[1]
       filename = f"{path}/{filename}"
       with open(filename, "wb") as f:
-        f.write(r.content)
-      logging.info(f"saveto: {filename}")
+        def func():
+          f.write(r.content)
+        catch(func, KeyboardInterrupt, warning="writing file {filename}, do not interrupt")
       return filename
 
   logging.warning(f"digest error: {sha1.hexdigest()}")
@@ -313,10 +329,10 @@ def gapps(config, headers, mirror, developers, tags, path, proxy, *args, noconne
             logging.warning(f"no veriant in this version match")
             continue
           if len(variants) > 1:
-            variants = sorted(variants, key=lambda x: x["priority"], reverse=True)
+            variants = sorted(variants, key=lambda x: (x["priority"], x["time"]), reverse=True)
           logging.debug(f"variants: {variants}")
           if len(variants) > 1 and variants[0]["priority"] == variants[1]["priority"]:
-            logging.warning(f"same variants")
+            logging.warning(f"same variants in this version match")
             for variant in variants:
               print(f"           link: {variant['pathname'].split('/')[-2]}, priority: {variant['priority']}, uploaded: {time.strftime('%Y-%m-%d %H:%M', time.gmtime(variant['time']))}")
 
@@ -352,6 +368,7 @@ def gapps(config, headers, mirror, developers, tags, path, proxy, *args, noconne
           logging.info(f"download: {link} (size: {filesize}, sha1digest: {sha1digest})")
 
           filename = download(s, dict(url=f"{origin}/wp-content/themes/APKMirror/download.php", params={"id": link}), sha1digest, path)
+          logging.info(f"saveto: {filename}")
           if packageFilename is not None and not nodelete:
             if filename != packageFilename:
               os.remove(packageFilename)
@@ -387,7 +404,6 @@ def main():
   parser.add_argument("--path", help="apk path", default="./apk")
   parser.add_argument("--proxy", help="proxy like http://localhost:1080/")
 
-  # noconnet, nodownload, force, nodelete
   parser.add_argument("--noconnect", help="not connect to the Internet, print arguments only", action="store_const", default=False, const=True)
   parser.add_argument("--nodownload", help="not download apk files, update package info only", action="store_const", default=False, const=True)
   parser.add_argument("--force", help="force to update apk files", action="store_const", default=False, const=True)
