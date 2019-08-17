@@ -127,7 +127,6 @@ def updatePackage(s, origin, keyword, package, mirror):
     }
 
   if len(packages) == 0:
-    logging.error(f"No package {package} found")
     return
 
   if len(packages) == 1:
@@ -234,6 +233,9 @@ def gapps(config, headers, mirror, developers, tags, path, proxy, *args, noconne
         if "name" not in package or mirror not in package:
           logging.warning(f"package ({color.blue(key)}) should be update")
           updatePackage(s, origin, f"{key} {developer['name']}", package, mirror)
+          if "name" not in package or mirror not in package:
+            logging.error(f"No package {color.blue(key)} found")
+            continue
           config.flush()
 
         logging.info(f"{color.green(developer['name'])} - {color.cyan(package['name'])}")

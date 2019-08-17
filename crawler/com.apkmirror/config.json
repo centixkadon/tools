@@ -150,6 +150,10 @@
           "name": "Google Device Personalization Services",
           "apkmirror": "google-device-personalization-services"
         },
+        "com.google.android.backuptransport": {
+          "name": "Google Backup Transport",
+          "apkmirror": "google-backup-transport"
+        },
         "com.google.android.calculator": {
           "name": "Google Calculator",
           "apkmirror": "google-calculator"
@@ -182,6 +186,7 @@
           "name": "Google Play services",
           "apkmirror": "google-play-services"
         },
+        "com.google.android.gms.policy_sidecar_aps": {},
         "com.google.android.GoogleCamera": {
           "name": "Google Camera",
           "apkmirror": "camera"
@@ -262,6 +267,10 @@
           "name": "Google Street View",
           "apkmirror": "street-view"
         },
+        "com.google.android.syncadapters.contacts": {
+          "name": "Google Contacts Sync",
+          "apkmirror": "google-contacts-sync"
+        },
         "com.google.android.tag": {
           "name": "Tags",
           "apkmirror": "tags-google"
@@ -306,9 +315,12 @@
     "core": {
       "packages": {
         "com.android.vending": true,
+        "com.google.android.backuptransport": true,
         "com.google.android.gms": true,
+        "com.google.android.gms.policy_sidecar_aps": true,
         "com.google.android.gsf": true,
-        "com.google.android.gsf.login": true
+        "com.google.android.gsf.login": true,
+        "com.google.android.syncadapters.contacts": true
       }
     },
     "pico": {
