@@ -1,14 +1,15 @@
 #!/usr/bin/python3
 
+import sys
+
 import getopt
 import getpass
 import gettext
-import sys
 import time
 import logging
 
-import requests
 import json
+import requests
 
 def printHelp(showAll=False):
   program = sys.argv[0]
@@ -105,13 +106,19 @@ def login(username, password):
     return None
   ret = post(args.portal + "/login", data={"username": username, "password": password})
   logging.info("Login: {}".format(ret))
+  # {'reply_code': 3, 'reply_msg': 'E011 您的账户余额不足!', 'request_uri': '/portal_io/login', 'request_time': 1551685692}
+  # {"reply_code":6,"reply_msg":"已登陆!","userinfo":{"username":"mg1723020","fullname":"李明","service_name":"学生标准计时服务","area_name":"XL_电子楼","acctstarttime":1551685745,"balance":2903,"useripv4":1926527032,"useripv6":"::","mac":"4c:e6:76:c4:cf:42","domain":"default","portal_server_ip":3688592044,"portal_acctsessionid":"15516857454977"},"request_uri":"/portal_io/login","request_time":1551686244}
+  if ret["reply_code"] == 3:
+    while True:
+      input("{} ".format(ret["reply_msg"]))
+      exit(0)
   return ret
 
 
 def main():
   if args.cmd in ["login", "loop"]:
     if args.username == "-":
-      args.username = getpass.getpass("username: ")
+      args.username = getpass.getpass("username: ").lower()
     if args.password == "-":
       args.password = getpass.getpass("password: ")
 
