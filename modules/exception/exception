@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+
+import time
+import logging
+
+
+def catch(func, *args, info=None, warning=None):
+  exception = None
+  while True:
+    try:
+      if exception is not None:
+        if info:
+          logging.info(info)
+        if warning:
+          logging.warning(warning)
+      func()
+    except args as e:
+      exception = e
+    else:
+      break
+  if exception is not None:
+    raise exception
+
+
+class catch:
+  def __init__(self, *args, info=None, warning=None, **kwargs):
+    super().__init__(**kwargs)
+    self.__args = args
+    self.__exception = None
+    self.__info = None
+    self.__warning = None
+
+  def __enter__(self):
+    pass
+
+  def __exit__(self, exc_type, exc_value, traceback):
+    if exc_type is None and self.__exception is not None:
+      raise self.__exception
+
+    if self.__exception is not None:
+      if self.__info is not None:
+        logging.info(self.__info)
+      if self.__warning is not None:
+        logging.warning(self.__warning)
+
+    if exc_type in self.__args:
+      self.__exception = exc_type
+      return True
+
+
+def main():
+  def func():
+    n = 5
+    secs = 0.8 / n
+    for i in range(n):
+      time.sleep(secs)
+      print(f"write {int((i + 1) * 100 / n)}%")
+  # catch(func, KeyboardInterrupt, warning="writing, do not interrupt")
+
+  print("runing")
+
+  while True:
+    with catch(KeyboardInterrupt, warning="writing, do not interrupt"):
+      n = 5
+      secs = 0.8 / n
+      for i in range(n):
+        time.sleep(secs)
+        print(f"write {int((i + 1) * 100 / n)}%")
+      break
+
+
+if __name__ == "__main__":
+  main()

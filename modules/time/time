@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+
+import calendar
+import os
+import time
+
+def main():
+  s = "08/3/2019 05:12 UTC" # str UTC
+  print(f"str UTC  : {s}")
+  st = time.strptime(s, "%m/%d/%Y %H:%M UTC") # str UTC -> struct_time UTC
+  print(f"s_t UTC  : {st}")
+  t = time.mktime(st) # struct_time UTC -> float UTC
+  print(f"t   UTC  : {t}")
+  st = time.localtime(t) # float UTC -> struct_time UTC
+  print(f"s_t UTC  : {st}")
+  s = time.strftime("%Y-%m-%d %H:%M:%S", st) # struct_time UTC -> str UTC
+  print(f"str UTC  : {s}")
+  print()
+
+  t = time.time() # float LOCAL
+  print(f"t   LOCAL: {t}")
+  st = time.gmtime(t) # float LOCAL -> struct_time UTC
+  print(f"s_t UTC  : {st}")
+  s = time.strftime("%Y-%m-%d %H:%M:%S", st) # struct_time UTC -> str UTC
+  print(f"str UTC  : {s}")
+  st = time.strptime(s, "%Y-%m-%d %H:%M:%S") # str UTC -> struct_time UTC
+  print(f"s_t UTC  : {st}")
+  t = time.mktime(st) # struct_time UTC -> float UTC
+  print(f"t   UTC  : {t}")
+  print()
+
+  t = time.time()
+  print(f"t   LOCAL: {t}")
+  st = time.gmtime(t)
+  print(f"s_t UTC  : {st}")
+  t = calendar.timegm(st)
+  print(f"t   LOCAL: {t}")
+  st = time.gmtime(t)
+  print(f"s_t UTC  : {st}")
+  print()
+
+  t = os.path.getmtime(".")
+  print(f"t   LOCAL: {t}")
+  st = time.gmtime(t)
+  print(f"s_t UTC  : {st}")
+  t = time.mktime(st)
+  print(f"t   UTC  : {t}")
+  print()
+
+
+if __name__ == "__main__":
+  main()
