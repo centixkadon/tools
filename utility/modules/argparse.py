@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 
+import os
+import shutil
+
 import argparse
+
+from utility.color import color
+
+os.environ["COLUMNS"], os.environ["LINES"] = (str(x) for x in shutil.get_terminal_size())
 
 def add():
   print("add")
@@ -9,7 +16,7 @@ def mul():
   print("mul")
 
 def main():
-  parser = argparse.ArgumentParser(description="\033[1;31mPython module argparse test description.\033[0m", epilog="\033[1;32mPython module argparse test epilog.\033[0m")
+  parser = argparse.ArgumentParser(description=color.red("Python module argparse test description."), epilog=color.green("Python module argparse test epilog."))
   parser.add_argument("-V", "--version", help="Version", action="version", version="%(prog)s 0.1")
   parser.add_argument("-v", "--verbose", help="Verbose", action="count", default=0)
 

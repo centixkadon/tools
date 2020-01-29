@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+
+import argparse
+
+from utility import color, logging
+
+
+def template(**kwargs):
+  logging.info(kwargs)
+  # import pdb; pdb.set_trace()
+
+
+def main():
+  defaultLevel = logging.WARNING
+  logging.addLevelNames()
+
+  parser = argparse.ArgumentParser(description="Template description.", epilog="Template epilog.")
+  parser.add_argument("-V", "--version", action="version", version="%(prog)s 0.1")
+  parser.add_argument("-q", "--quiet", help=f"set log level up to {', '.join([logging.getLevelName(level) for level in range(defaultLevel + 10, 60, 10)])} (default {logging.getLevelName(defaultLevel)})", action="count", default=0)
+  parser.add_argument("-v", "--verbose", help=f"set log level down to {', '.join([logging.getLevelName(level) for level in range(defaultLevel - 10, 0, -10)])} (default {logging.getLevelName(defaultLevel)})", action="count", default=0)
+
+  args = parser.parse_args()
+
+  level = min(max(0, defaultLevel + (args.quiet - args.verbose) * 10), logging.CRITICAL)
+  logging.setLevel(level)
+  logging.info(f"logging level is set to {logging.getLevelName(level)}")
+  logging.info(f"Arguments: {args}")
+
+  template(**args.__dict__)
+
+
+if __name__ == "__main__":
+  main()
