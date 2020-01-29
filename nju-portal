@@ -1,182 +1,148 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
-import sys
-
-import getopt
 import getpass
-import gettext
 import time
-import logging
 
+import argparse
 import json
 import requests
+from utility import logging
 
-def printHelp(showAll=False):
-  program = sys.argv[0]
-  file = sys.stderr
-  print("usage:", file=sys.stderr)
-  print("  {} COMMAND [OPTIONS]".format(program), file=sys.stderr)
-  print("command:", file=sys.stderr)
-  if showAll:
-    print("  {} help             print less help".format(program), file=sys.stderr)
-    print("  {} all              print all help".format(program), file=sys.stderr)
-  else:
-    print("  {} help             print this help".format(program), file=sys.stderr)
-  print("  {} info             print portal infomation".format(program), file=sys.stderr)
-  print("  {} logout           logout portal".format(program), file=sys.stderr)
-  print("  {} login  ...       login portal".format(program), file=sys.stderr)
-  print("  {} login  [USERNAME [PASSWORD]]".format(" " * len(program)), file=sys.stderr)
-  if showAll:
-    print("  {} loop   ...       loop login portal".format(program), file=sys.stderr)
-    print("  {} loop   [USERNAME [PASSWORD [DELAY_SECONDS [POST_INTERVAL_SECONDS]]]]".format(" " * len(program)), file=sys.stderr)
-  print("options:", file=sys.stderr)
-  print("  USERNAME                         portal account username. use '-' or ignore this option to input without echo.", file=sys.stderr)
-  print("  PASSWORD                         portal account password. use '-' or ignore this option to input without echo.", file=sys.stderr)
-  if showAll:
-    print("  DELAY_SECONDS                    delay between logins. default is 300.0", file=sys.stderr)
-    print("  POST_INTERVAL_SECONDS            interval between posts. default is 1.0", file=sys.stderr)
 
-class Args:
-  def __init__(self):
-    self.cmd = "help"
-    self.host = "http://p.nju.edu.cn"
-    self.portal = self.host + "/portal_io"
-    self.headers = {"Connection": "close"}
+class Portal:
+  def __init__(self, *args, command, username, password, request_interval, loop, loop_interval, force, level, **kwargs):
+    self.origin = "http://p.nju.edu.cn/portal_io"
+    self.headers = {}
     self.timeout = (3.1, 15.1)
-    self.username = "-"
-    self.password = "-"
-    self.delay = 300.0
-    self.post_interval = 1.0
 
-class ArgsError(Exception):
-  def name(self):
-    return type(self).__name__
+    self.username = username or input("username: ").lower()
+    self.password = password or getpass.getpass("password: ")
+    self.username_last = None
 
-def post(url, data=None):
-  try:
-    with requests.Session() as s:
-      s.headers.update(args.headers)
-      r = s.post(url, data=data, timeout=args.timeout)
-      time.sleep(args.post_interval)
-  except requests.exceptions.Timeout:
-    logging.warning("Timeout")
-    r = None
-  if r is None or r.status_code != 200:
-    return {}
-  return r.json()
+    self.request_time_last = 0.0
+    self.request_interval = request_interval
+
+    loop_time_last = 0.0
+
+    self.level = level
+
+    if command == "info":
+      while True:
+        loop_time_last = self.sleep_until(loop_time_last + loop_interval)
+        self.getUsername()
+
+        if not loop:
+          break
+    elif command == "logout":
+      while True:
+        loop_time_last = self.sleep_until(loop_time_last + loop_interval)
+        self.logout()
+
+        if not loop:
+          break
+    elif command == "login":
+      while True:
+        loop_time_last = self.sleep_until(loop_time_last + loop_interval)
+        username = self.getUsername()
+        if username is None:
+          self.login()
+        elif force and username != self.username:
+          self.logout()
+          self.login()
+
+        if not loop:
+          break
+
+  def login(self):
+    logininfo = self.post("login", data={"username": username, "password": password})
+    logging.info("login: {}".format(logininfo))
+    # {'reply_code': 3, 'reply_msg': 'E011 您的账户余额不足!', 'request_uri': '/portal_io/login', 'request_time': 1551685692}
+    # {'reply_code': 6, 'reply_msg': '已登陆!', 'userinfo': {'username':'', 'fullname': ''}, 'request_uri': '/portal_io/login', 'request_time': 1551686244}
+    # if ret["reply_code"] == 3: # 余额不足
+    return ret
+
+  def logout(self):
+    logoutinfo = {}
+    logging.info("logout: {}".format(logoutinfo))
+
+  def getUsername(self):
+    ret = {"username": None}
+    userinfo = self.post("getinfo")
+    if "userinfo" in userinfo and "username" in userinfo["userinfo"]:
+      userinfo = userinfo["userinfo"]
+      volume = self.post("selfservice/volume/getlist")
+      if "rows" in volume and isinstance(volume["rows"], list) and len(volume["rows"]) > 0:
+        volume = volume["rows"][0]
+        ret = {
+          "username": userinfo["username"],
+          "fullname": userinfo["fullname"],
+          "client_ip": ".".join([str(userinfo["useripv4"] // (256**i) % 256) for i in range(3, -1, -1)]),
+          "balance": "RMB {}.{}".format(userinfo["balance"] // 100, userinfo["balance"] % 100),
+          "use_time": ":".join([str(volume["total_ipv4_volume"] // (60**i) % (744 if i == 2 else 60)) for i in range(2, -1, -1)]) + " h"
+        }
+
+    username = ret["username"]
+    if self.username_last != username:
+      logging.info("info: {}".format(ret))
+      self.username_last = username
+
+      if self.level >= logging.CRITICAL:
+        print(username)
+
+    return username
 
 
-def info(show=False):
-  userinfoJson = post(args.portal + "/getinfo")
-  ret = {"username": None}
-  if "userinfo" in userinfoJson and "username" in userinfoJson["userinfo"]:
-    userinfoJson = userinfoJson["userinfo"]
-    volumeJson = post(args.portal + "/selfservice/volume/getlist")
-    if "rows" in volumeJson and isinstance(volumeJson["rows"], list) and len(volumeJson["rows"]) > 0:
-      volumeJson = volumeJson["rows"][0]
-      ret = {
-        "username": userinfoJson["username"],
-        "fullname": userinfoJson["fullname"],
-        "client_ip": ".".join([str(userinfoJson["useripv4"] // (256**i) % 256) for i in range(3, -1, -1)]),
-        "balance": "RMB {}.{}".format(userinfoJson["balance"] // 100, userinfoJson["balance"] % 100),
-        "use_time": ":".join([str(volumeJson["total_ipv4_volume"] // (60**i) % (744 if i == 2 else 60)) for i in range(2, -1, -1)]) + " h"
-      }
-  if show:
-    logging.info("Info: {}".format(ret))
-  return ret
+  def post(self, pathname, data=None):
+    try:
+      with requests.Session() as s:
+        s.headers.update(self.headers)
 
+        self.request_time_last = self.sleep_until(self.request_time_last + self.request_interval)
+        r = s.post(f"{self.origin}/{pathname}", data=data, timeout=self.timeout)
+    except requests.Timeout as e:
+      logging.warning(f"catch exception: {e}")
+      r = None
+    except Exception as e:
+      logging.error(f"catch exception: {e}")
+      r = None
+    if r is None or r.status_code != 200:
+      return {}
+    return r.json()
 
-def logout():
-  ret = post(args.portal + "/logout")
-  logging.info("Logout: {}".format(ret))
-  return ret
-
-
-def logout_with_check(username):
-  ret = info()
-  if ret["username"] != username:
-    if ret["username"] is not None:
-      logout()
-    return True
-  return False
-
-
-def login(username, password):
-  if not logout_with_check(username):
-    return None
-  ret = post(args.portal + "/login", data={"username": username, "password": password})
-  logging.info("Login: {}".format(ret))
-  # {'reply_code': 3, 'reply_msg': 'E011 您的账户余额不足!', 'request_uri': '/portal_io/login', 'request_time': 1551685692}
-  # {"reply_code":6,"reply_msg":"已登陆!","userinfo":{"username":"mg1723020","fullname":"李明","service_name":"学生标准计时服务","area_name":"XL_电子楼","acctstarttime":1551685745,"balance":2903,"useripv4":1926527032,"useripv6":"::","mac":"4c:e6:76:c4:cf:42","domain":"default","portal_server_ip":3688592044,"portal_acctsessionid":"15516857454977"},"request_uri":"/portal_io/login","request_time":1551686244}
-  if ret["reply_code"] == 3:
+  def sleep_until(self, next_time):
     while True:
-      input("{} ".format(ret["reply_msg"]))
-      exit(0)
-  return ret
+      now = time.time()
+      if next_time <= now:
+        return now
+      time.sleep(next_time - now)
 
 
 def main():
-  if args.cmd in ["login", "loop"]:
-    if args.username == "-":
-      args.username = getpass.getpass("username: ").lower()
-    if args.password == "-":
-      args.password = getpass.getpass("password: ")
+  defaultLevel = logging.WARNING
+  logging.addLevelNames()
 
-  if args.cmd == "help":
-    printHelp()
-  elif args.cmd == "all":
-    printHelp(True)
-  elif args.cmd == "info":
-    logging.info("Parameters: {{ post_interval: {} }}".format(args.post_interval))
-    info(True)
-  elif args.cmd == "logout":
-    logging.info("Parameters: {{ post_interval: {} }}".format(args.post_interval))
-    logout()
-  elif args.cmd == "login":
-    logging.info("Parameters: {{ username: {}, password: {}, post_interval: {} }}".format(args.username, "***", args.post_interval))
-    login(args.username, args.password)
-  elif args.cmd == "loop":
-    logging.info("Parameters: {{ username: {}, password: {}, delay: {}, post_interval: {} }}".format(args.username, "***", args.delay, args.post_interval))
-    while True:
-      login(args.username, args.password)
-      time.sleep(args.delay)
-  else:
-    raise ArgsError("COMMAND is not supported")
+  parser = argparse.ArgumentParser(description="Manage login/logout portal in Nanjing University.", epilog="Template epilog.")
+  parser.add_argument("-V", "--version", action="version", version="%(prog)s 0.2")
+  parser.add_argument("-q", "--quiet", help=f"set log level up to {', '.join([logging.getLevelName(level) for level in range(defaultLevel + 10, 60, 10)])} (default {logging.getLevelName(defaultLevel)})", action="count", default=0)
+  parser.add_argument("-v", "--verbose", help=f"set log level down to {', '.join([logging.getLevelName(level) for level in range(defaultLevel - 10, 0, -10)])} (default {logging.getLevelName(defaultLevel)})", action="count", default=0)
+
+  parser.add_argument("command", help="command for portal (%(choices)s)", choices=["login", "logout", "info"], metavar="COMMAND")
+  parser.add_argument("-u", "--username", help="username of portal account")
+  parser.add_argument("-p", "--password", help="password of portal account")
+  parser.add_argument("--request-interval", help="interval between two requests", type=float, default=1.0)
+  parser.add_argument("-l", "--loop", help="loop for command", action="store_true")
+  parser.add_argument("--loop-interval", help="interval of loop", type=float, default=300.0)
+  parser.add_argument("-f", "--force", help="login even if other user is login", action="store_true")
+
+  args = parser.parse_args()
+  args.level = min(max(0, defaultLevel + (args.quiet - args.verbose) * 10), logging.CRITICAL)
+
+  logging.setLevel(args.level)
+  logging.info(f"logging level is set to {logging.getLevelName(args.level)}")
+  logging.info(f"Arguments: {args}")
+
+  Portal(**args.__dict__)
 
 
 if __name__ == "__main__":
-  logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s - %(message)s")
-
-  args = Args()
-  argc = len(sys.argv)
-  if argc > 1:
-    args.cmd = sys.argv[1]
-
-    if argc > 2:
-      args.username = sys.argv[2]
-    if argc > 3:
-      args.password = sys.argv[3]
-
-    try:
-      if argc > 4:
-        try:
-          args.delay = float(sys.argv[4])
-        except ValueError:
-          raise ArgsError("DELAY_SECONDS is not a number")
-        if args.delay < 0:
-          raise ArgsError("DELAY_SECONDS is under zero")
-      if argc > 5:
-        try:
-          args.post_interval = float(sys.argv[5])
-        except ValueError:
-          raise ArgsError("POST_INTERVAL_SECONDS is not a number")
-        if args.post_interval < 0:
-          raise ArgsError("POST_INTERVAL_SECONDS is under zero")
-
-      main()
-    except ArgsError as e:
-      logging.error("{}: {}".format(e.name(), e))
-      printHelp()
-      exit(1)
-  else:
-    printHelp()
+  main()
