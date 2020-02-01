@@ -4,9 +4,58 @@ import getpass
 import time
 
 import argparse
-import json
 import requests
+from utility import json
 from utility import logging
+
+
+class Timer:
+  def __init__(self, interval):
+    self.interval = interval
+
+    self.__time = 0
+
+  def wait(self):
+    while True:
+      now = time.time()
+      if self.__time <= now:
+        self.__time = time.time() + self.interval
+        break
+      time.sleep(self.__time - now)
+
+
+class IpAddress:
+  def __init__(self, value):
+    if isinstance(value, int):
+      self.__version = 4
+      self.__address = [value // (256 ** (3 - i)) % 256 for i in range(4)]
+
+  def __repr__(self):
+    if self.__version == 4:
+      return ".".join([str(x) for x in self.__address])
+
+
+class Balance:
+  def __init__(self, value):
+    self.__balance = int(value)
+
+  def __repr__(self):
+    return f"{self.__balance / 100:.2f}"
+
+  def __int__(self):
+    return self.__balance
+
+
+class Volume:
+  def __init__(self, value):
+    self.__volume = int(value)
+
+  def __repr__(self):
+    return ":".join([str(self.__volume // (60 ** (2 - i)) % (60 if i else 744)) for i in range(3)])
+
+  def __int__(self):
+    return self.__volume
+
 
 
 class Portal:
@@ -15,106 +64,181 @@ class Portal:
     self.headers = {}
     self.timeout = (3.1, 15.1)
 
-    self.username = username or input("username: ").lower()
-    self.password = password or getpass.getpass("password: ")
-    self.username_last = None
+    self.username = username
+    self.password = password
 
-    self.request_time_last = 0.0
-    self.request_interval = request_interval
+    self._request_timer = Timer(request_interval)
 
-    loop_time_last = 0.0
+    loop_timer = Timer(loop_interval)
 
     self.level = level
 
+    self.location()
+
     if command == "info":
       while True:
-        loop_time_last = self.sleep_until(loop_time_last + loop_interval)
-        self.getUsername()
+        loop_timer.wait()
+        self.info()
+
+        if self.username_loggedin:
+          self.volume()
 
         if not loop:
           break
     elif command == "logout":
       while True:
-        loop_time_last = self.sleep_until(loop_time_last + loop_interval)
-        self.logout()
+        loop_timer.wait()
+        self.info()
+
+        if not self.username_loggedin:
+          self.logout()
+
+        if self.username_loggedin:
+          self.volume()
 
         if not loop:
           break
     elif command == "login":
+      self.username = self.username or input("username: ").lower()
+      self.password = self.password or getpass.getpass("password: ")
+      logging.info("account: {}".format({"username": self.username, "password": self.password}))
+
       while True:
-        loop_time_last = self.sleep_until(loop_time_last + loop_interval)
-        username = self.getUsername()
-        if username is None:
-          self.login()
-        elif force and username != self.username:
+        loop_timer.wait()
+        self.info()
+
+        if force and self.username_loggedin and self.username != self.username_loggedin:
           self.logout()
+        if not self.username_loggedin:
           self.login()
+
+        if self.username_loggedin:
+          self.volume()
 
         if not loop:
           break
 
-  def login(self):
-    logininfo = self.post("login", data={"username": username, "password": password})
-    logging.info("login: {}".format(logininfo))
-    # {'reply_code': 3, 'reply_msg': 'E011 您的账户余额不足!', 'request_uri': '/portal_io/login', 'request_time': 1551685692}
-    # {'reply_code': 6, 'reply_msg': '已登陆!', 'userinfo': {'username':'', 'fullname': ''}, 'request_uri': '/portal_io/login', 'request_time': 1551686244}
-    # if ret["reply_code"] == 3: # 余额不足
-    return ret
 
-  def logout(self):
-    logoutinfo = {}
-    logging.info("logout: {}".format(logoutinfo))
+  def location(self):
+    response = self.post("getipoeinfo")
+    ipoe = response.ipoe
 
-  def getUsername(self):
-    ret = {"username": None}
-    userinfo = self.post("getinfo")
-    if "userinfo" in userinfo and "username" in userinfo["userinfo"]:
-      userinfo = userinfo["userinfo"]
-      volume = self.post("selfservice/volume/getlist")
-      if "rows" in volume and isinstance(volume["rows"], list) and len(volume["rows"]) > 0:
-        volume = volume["rows"][0]
-        ret = {
-          "username": userinfo["username"],
-          "fullname": userinfo["fullname"],
-          "client_ip": ".".join([str(userinfo["useripv4"] // (256**i) % 256) for i in range(3, -1, -1)]),
-          "balance": "RMB {}.{}".format(userinfo["balance"] // 100, userinfo["balance"] % 100),
-          "use_time": ":".join([str(volume["total_ipv4_volume"] // (60**i) % (744 if i == 2 else 60)) for i in range(2, -1, -1)]) + " h"
+    self._last_location = {
+      "svlan": ipoe.svlan(),
+      "pvlan": ipoe.pvlan(),
+    }
+    return self._last_location
+
+  def info(self):
+    response = self.post("getinfo")
+
+    info = {
+      "username": None
+    }
+    if response.reply_code() == 0:
+      userinfo = response.userinfo
+      self._balance = userinfo.balance()
+      info = {
+        "username": userinfo.username().lower(),
+        "fullname": userinfo.fullname(),
+        "clientip": IpAddress(userinfo.useripv4()),
+        "balance": Balance(self._balance),
+      }
+    self.username_loggedin = info["username"]
+
+    self._last_info = info
+    return self._last_info
+
+  def volume(self):
+    volume = {}
+    if self.username_loggedin:
+      response = self.post("selfservice/volume/getlist")
+
+      reply_code = response.reply_code()
+      if reply_code in [0, 9]:
+        total_volume = response.rows[0].total_ipv4_volume() or 0
+        min_balance = max(0, self._balance - max(0, 130 * 60 - max(30 * 60, total_volume)) // 3)
+        max_volume = total_volume + self._balance * 3 * 60
+        max_volume = max_volume if max_volume < 130 * 60 else -1
+        volume = {
+          "username": self.username_loggedin,
+          "volume": Volume(total_volume),
+          "min_balance": Balance(min_balance),
+          "max_volume": Volume(max_volume),
         }
 
-    username = ret["username"]
-    if self.username_last != username:
-      logging.info("info: {}".format(ret))
-      self.username_last = username
+      if reply_code != 0:
+        logging.warning(f"reply_code: {reply_code}, reply_msg: {response.reply_msg()}")
 
-      if self.level >= logging.CRITICAL:
-        print(username)
+    self._last_volume = volume
+    return self._last_volume
 
-    return username
+  def login(self):
+    response = self.post("login", data={"username": self.username, "password": self.password})
+
+    reply_code = response.reply_code()
+    if reply_code == 6:
+      self.username_loggedin = response.userinfo.username().lower()
+
+    if reply_code != 6:
+      (logging.error if reply_code in [3, 8] else logging.warning)(f"reply_code: {reply_code}, reply_msg: {response.reply_msg()}")
+
+  def logout(self):
+    response = self.post("logout")
+
+    self.username_loggedin = None
+
+
+  @property
+  def username_loggedin(self):
+    return self.__username_loggedin
+
+  @username_loggedin.setter
+  def username_loggedin(self, value):
+    if self.level >= logging.CRITICAL and self.__username_loggedin != username:
+      print(username)
+    self.__username_loggedin = value
 
 
   def post(self, pathname, data=None):
+    response = None
+
     try:
       with requests.Session() as s:
         s.headers.update(self.headers)
 
-        self.request_time_last = self.sleep_until(self.request_time_last + self.request_interval)
+        self._request_timer.wait()
         r = s.post(f"{self.origin}/{pathname}", data=data, timeout=self.timeout)
+        r.raise_for_status()
+
+        if r.status_code == 200:
+          response = r.json()
     except requests.Timeout as e:
-      logging.warning(f"catch exception: {e}")
-      r = None
+      logging.warning(f"timeout: {e}")
+    except requests.HTTPError as e:
+      logging.warning(f"httperr: {e}")
+    except json.JSONDecodeError:
+      logging.warning(f"jsonerr: {e}")
     except Exception as e:
       logging.error(f"catch exception: {e}")
-      r = None
-    if r is None or r.status_code != 200:
-      return {}
-    return r.json()
 
-  def sleep_until(self, next_time):
-    while True:
-      now = time.time()
-      if next_time <= now:
-        return now
-      time.sleep(next_time - now)
+    if response is None:
+      logging.warning("response json set to '{}'")
+      response = {}
+
+    logging.debug(f"/{pathname}: {response}")
+    return json.json(response)
+
+
+  def _watch(self, prefix, name, value):
+    if name.startswith(prefix):
+      if getattr(self, name, None) != value:
+        logging.info(f"{name[len(prefix) :]}: {value}")
+
+  def __setattr__(self, name, value):
+    self._watch("_last_", name, value)
+    super().__setattr__(name, value)
+
 
 
 def main():

@@ -8,6 +8,7 @@ from logging import *
 
 from utility.color import color
 
+
 def getLevelName(level):
   return _logging.getLevelName(level).replace(" ", "")
 
@@ -15,8 +16,8 @@ def getLevelName(level):
 def addLevelNames():
   os.environ["COLUMNS"], os.environ["LINES"] = (str(x) for x in shutil.get_terminal_size())
 
-  for no, c in [(_logging.CRITICAL, color.magenta), (_logging.ERROR, color.red), (_logging.WARNING, color.yellow), (_logging.INFO, color.green), (_logging.DEBUG, color.white)]:
-    _logging.addLevelName(no, c(f"{_logging.getLevelName(no):>8}"))
+  for n, c in [("FATAL", color.magenta), ("ERROR", color.red), ("WARN", color.yellow), ("INFO", color.green), ("DEBUG", color.white)]:
+    _logging.addLevelName(_logging.getLevelName(n), c(f"{n:5}"))
 
 
 def setLevel(level):
@@ -27,7 +28,7 @@ def setLevel(level):
 
 def main():
   addLevelNames()
-  setLevel(logging.NOTSET)
+  setLevel(_logging.NOTSET)
 
   _logging.debug("Debug")
   _logging.info("Info")
