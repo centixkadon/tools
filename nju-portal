@@ -131,6 +131,7 @@ class Portal:
 
   def info(self):
     response = self.post("getinfo")
+    # /getinfo: {'reply_code': 2, 'reply_msg': '无用户portal信息', 'request_uri': '/portal_io/getinfo', 'request_time': 1581063226}
 
     info = {
       "username": None
@@ -175,6 +176,7 @@ class Portal:
 
   def login(self):
     response = self.post("login", data={"username": self.username, "password": self.password})
+    # /login: {'reply_code': 3, 'reply_msg': 'E011 您的账户余额不足!', 'request_uri': '/portal_io/login', 'request_time': 1581063228}
 
     reply_code = response.reply_code()
     if reply_code == 6:

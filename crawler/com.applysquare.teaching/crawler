@@ -220,6 +220,18 @@ def fetchStudentAnswer(student):
     raise JsonError("Failed to get studentAnswer")
 
 
+# def fetchStudentAnswers():
+#   def fetchStudentAnswersPage(page):
+#     studentAnswersList = config.get("Work/getWorkSubmitList", params={"homework_id": None, "p": page + 1, "is_answer": None, "uid": None, "cid": None})
+#     logging.info("studentAnswersList: {}".format(studentAnswersList))
+#     try:
+#       studentAnswers = [(row["uid"], json.loads(row["answer_content"])["answer_record"]) for row in studentAnswersList["message"]["teacher_not_review"] if row["answer_content"] != ""]
+#       return {student: dict({"attachs": [[attach["path"], attach["ext"].lower()] for attach in studentAnswer["attach_info"]]} if "attach_info" in studentAnswer else {}, select=studentAnswer["select"], record=studentAnswer) for student, studentAnswer in studentAnswers}
+
+#   studentAnswers = fetchStudentAnswersPage(0)
+#   return studentAnswers
+
+
 def downloadStudentAnswers(command, args):
   homeworks = fetchHomeworks()
   print("HOMEWORK_INDEX: HOMEWORK_ID HOMEWORK_TITLE")

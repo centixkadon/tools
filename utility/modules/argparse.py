@@ -7,7 +7,7 @@ import argparse
 
 from utility.color import color
 
-os.environ["COLUMNS"], os.environ["LINES"] = (str(x) for x in shutil.get_terminal_size())
+os.environ.update(zip(("COLUMNS", "LINES"), (str(x) for x in shutil.get_terminal_size())))
 
 def add():
   print("add")
