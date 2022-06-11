@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+
+import sys
+import linecache
+
+import runpy
+
+if __name__ == "__main__":
+  if len(sys.argv) < 2:
+    print("No module specified for execution", file=sys.stderr)
+
+  else:
+    del sys.argv[0]
+
+    try:
+      runpy.run_path(sys.argv[0], run_name="__main__")
+    except Exception as e:
+      etype = type(e)
+
+      import traceback
+      tbs = list(traceback.walk_tb(e.__traceback__))
+      tb_frames = [tb_frame for tb_frame, _ in tbs]
+      tb_linenos = [tb_lineno for _, tb_lineno in tbs]
+
+      fs = [list(traceback.walk_stack(tb_frame)) for tb_frame in tb_frames]
+      f_frames = [[f_frame for f_frame, _ in fs] for fs in fs]
+      f_linenos = [[f_lineno for _, f_lineno in fs] for fs in fs]
+
+      print(f"traceback:")
+      for tb_index, (tb_frame, tb_lineno) in enumerate(tbs):
+        co = tb_frame.f_code
+        print(f'  tb_frames[{tb_index}] <file "{co.co_filename}", line {tb_lineno}, in {co.co_name}>', file=sys.stderr)
+        line = linecache.getline(co.co_filename, tb_lineno).strip()
+        print(f"    {line}", file=sys.stderr)
+      print(f"{etype.__module__}.{etype.__qualname__}: {e}", file=sys.stderr)
+      print(file=sys.stderr)
+
+      def pf(index: int | None = None, *args, **kwargs):
+        for tb_index, (tb_frame, tb_lineno) in enumerate(tbs) if index is None else [(index, (tb_frames[index], tb_linenos[index]))]:
+          co = tb_frame.f_code
+          print(f'  tb_frames[{tb_index}] <file "{co.co_filename}", line {tb_lineno}, in {co.co_name}>', file=sys.stderr)
+          line = linecache.getline(co.co_filename, tb_lineno).strip()
+          print(f"    {line}", file=sys.stderr)
+
+          for f_index, (f_frame, f_lineno) in enumerate(fs[tb_index]):
+            co = f_frame.f_code
+            print(f'    f_frames[{tb_index}][{f_index}] <file "{co.co_filename}", line {f_lineno}, in {f_frame.f_code.co_name}>', file=sys.stderr)
+            line = linecache.getline(co.co_filename, f_lineno).strip()
+            print(f"      {line}", file=sys.stderr)
+        print(file=sys.stderr)
+
+      print(f'f_frames[i][j] type "{pf.__name__}()" to print details', file=sys.stderr)
+      print(file=sys.stderr)
+
+      import pdb; pdb.set_trace()
+      print(file=sys.stderr)
