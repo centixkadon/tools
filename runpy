@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import bdb
 import sys
 import linecache
 
@@ -14,6 +15,8 @@ if __name__ == "__main__":
 
     try:
       runpy.run_path(sys.argv[0], run_name="__main__")
+    except bdb.BdbQuit:
+      pass
     except Exception as e:
       etype = type(e)
 

@@ -1,5 +1,5 @@
 
-from typing import Any, AnyStr, Callable, Iterator, Optional, Type, TypeVar, cast
+from typing import Any, AnyStr, Callable, Iterable, Iterator, Optional, Type, TypeVar, cast
 
 T = TypeVar("T")
 KT = TypeVar("KT")
